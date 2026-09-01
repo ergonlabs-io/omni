@@ -1,0 +1,176 @@
+# Cuts a release from a v* tag.
+#
+# `make dist` is the single source of truth for artifact naming, and
+# install.sh downloads exactly the names it produces. The "verify artifacts"
+# step below re-asserts that contract against the installer's own filename
+# formula, and the final step installs the published release end to end --
+# so a drift between the Makefile and install.sh fails the release instead
+# of shipping a curl|sh that 404s.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  # Build and verify a version without publishing anything. Use this to
+  # exercise the workflow before cutting a real tag.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. v0.1.0. Verifies only; never publishes."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload its assets
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The tag is the version. `make dist` would otherwise derive it from
+      # `git describe --tags --always --dirty`, which in a CI checkout can
+      # silently produce a commit hash or a -dirty suffix.
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            tag=$GITHUB_REF_NAME
+            publish=true
+          else
+            tag=${{ inputs.version }}
+            publish=false
+          fi
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::version '$tag' is not vMAJOR.MINOR.PATCH[-suffix]"; exit 1 ;;
+          esac
+          # A prerelease must not become releases/latest -- that is the URL
+          # install.sh resolves when no --version is given.
+          case "$tag" in
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
+          esac
+          {
+            echo "tag=$tag"
+            echo "bare=${tag#v}"
+            echo "publish=$publish"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Gate - fmt, vet, test
+        run: make check
+
+      - name: Gate - race
+        run: make test-race
+
+      - name: Gate - CLI invariants
+        run: make smoke VERSION=${{ steps.v.outputs.tag }}
+
+      - name: Verify the version is baked into the binary
+        run: |
+          out=$(./bin/omni --version)
+          echo "$out"
+          case "$out" in
+            *"${{ steps.v.outputs.bare }}"*) ;;
+            *) echo "::error::--version does not report ${{ steps.v.outputs.bare }}: $out"; exit 1 ;;
+          esac
+
+      # DATE comes from the tagged commit rather than `date -u`, so
+      # re-running this workflow on the same tag produces the same binaries.
+      - name: Build release artifacts
+        run: |
+          make dist \
+            VERSION=${{ steps.v.outputs.tag }} \
+            DATE="$(git log -1 --format=%cd --date=format:%Y-%m-%d)"
+
+      # install.sh builds its filename as omni_<bare>_<os>_<arch>.tar.gz and
+      # requires a bare `omni` inside. Assert both here, where a mismatch is
+      # a failed release rather than a broken installer in the wild.
+      - name: Verify artifacts match the installer's contract
+        run: |
+          cd dist
+          rc=0
+          for p in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            f="omni_${{ steps.v.outputs.bare }}_${p}.tar.gz"
+            if [ ! -f "$f" ]; then
+              echo "::error::install.sh expects $f; make dist did not produce it"; rc=1; continue
+            fi
+            tar -tzf "$f" | grep -qx omni || {
+              echo "::error::$f does not contain a bare 'omni' binary"; rc=1; }
+          done
+          [ -f checksums.txt ] || { echo "::error::no checksums.txt; install.sh refuses to install without one"; rc=1; }
+          [ "$rc" = 0 ] || exit 1
+          sha256sum -c checksums.txt
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omni-${{ steps.v.outputs.bare }}
+          path: dist/
+          retention-days: 7
+
+      - name: Publish release
+        if: steps.v.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          # Header first, then gh's generated commit list underneath.
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh
+          \`\`\`
+
+          macOS and Linux, amd64 and arm64. The installer verifies the
+          download against \`checksums.txt\` below and runs \`omni init\`.
+
+          The macOS binaries are unsigned. \`curl\` does not set the
+          quarantine attribute, so a \`curl | sh\` install runs; a tarball
+          downloaded through a browser will need \`xattr -d
+          com.apple.quarantine\`.
+          EOF
+          prerelease=""
+          if [ "${{ steps.v.outputs.prerelease }}" = true ]; then
+            prerelease=--prerelease
+          fi
+          gh release create "$TAG" dist/*.tar.gz dist/checksums.txt \
+            --title "omni $TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --generate-notes \
+            --verify-tag \
+            $prerelease
+
+      # The end-to-end check: install the release that was just published,
+      # the way a user would.
+      - name: Install the published release with install.sh
+        if: steps.v.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+          OMNI_HOME: ${{ runner.temp }}/omni-home
+        run: |
+          ok=
+          for attempt in 1 2 3 4 5; do
+            if sh install.sh --version "$TAG" --dir "$RUNNER_TEMP/bin"; then ok=1; break; fi
+            echo "attempt $attempt failed; release assets may not be served yet"
+            sleep 10
+          done
+          [ -n "$ok" ] || { echo "::error::install.sh could not install $TAG"; exit 1; }
+          "$RUNNER_TEMP/bin/omni" --version
+          for f in omni.conf agents/claude.conf agents/codex.conf; do
+            [ -f "$OMNI_HOME/$f" ] || { echo "::error::omni init did not create $f"; exit 1; }
+          done
