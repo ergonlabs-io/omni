@@ -101,17 +101,21 @@ bodies = true
 # ANTHROPIC_LOG = "debug"
 ```
 
+That is an example of a file you might write. The one `omni init` generates
+has the same shape with every key commented out.
+
 Model rewriting is sticky for a session rather than per-request, for
 prompt-cache reasons: a model that changes mid-session throws away the cached
 prefix and costs more than the routing saves. See
 [Model routing](../../interception/model-routing/) — including how much of it
 is implemented today.
 
-:::note[`omni init` writes this file with content, not just comments]
-The `claude.conf` you get from `omni init` sets `mode = "route"` and a sample
-`model_map` mapping Opus to Sonnet. Neither does anything yet, but both will.
-`omni --dry-run claude` shows what is in effect; edit or delete what you did
-not ask for.
+:::note[The generated file overrides nothing]
+The `claude.conf` you get from `omni init` is comments only, so `omni claude`
+inherits every value from `omni.conf` until you uncomment something. That is
+deliberate: `omni init` will not rewrite this file once it exists, so a
+default shipped here would be one you keep forever. `omni --dry-run claude`
+shows what is in effect and which layer set it.
 :::
 
 ## Environment variables

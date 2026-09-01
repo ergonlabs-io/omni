@@ -95,12 +95,12 @@ omni --help           # includes which agents were detected on PATH
 `omni --help` reports each known agent as detected (with its resolved path)
 or not found, which answers "is my agent installed" without a second command.
 
-:::note[`omni init` writes opinionated defaults]
-The generated `agents/claude.conf` is not empty. It ships `mode = "route"` and
-a sample `model_map` mapping `claude-opus-5` to `claude-sonnet-5`. Neither is
-applied in Phase 0, but both will be once routing lands. Run
-`omni --dry-run claude` to see the effective config, and edit or delete
-anything you did not ask for.
+:::note[`omni init` never overrides your agent's behavior]
+The generated `agents/claude.conf` is a commented example: every key in it is
+commented out, so a fresh install changes nothing about how the agent runs
+beyond recording. `omni init` also never rewrites a file that already exists,
+so anything you put there is yours to maintain. Run `omni --dry-run claude`
+to see the effective config and the file each value came from.
 :::
 
 Next: run your first session in the [Quickstart](../quickstart/).

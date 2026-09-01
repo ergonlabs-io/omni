@@ -44,26 +44,27 @@ would launch: /Users/me/.local/bin/claude
 with env:
   ANTHROPIC_BASE_URL=http://127.0.0.1:<ephemeral>
 config:
-  mode                   "route"                  ~/.omni/agents/claude.conf:4
-  all_traffic            false                    ~/.omni/omni.conf:13
-  record.enabled         true                     ~/.omni/omni.conf:16
-  record.redact          true                     ~/.omni/omni.conf:17
-  record.bodies          true                     ~/.omni/agents/claude.conf:19
-  record.retention       "336h0m0s"               ~/.omni/omni.conf:19
-  proxy.listen           "127.0.0.1:0"            ~/.omni/omni.conf:28
-  model_map              {claude-opus-5 → claude-sonnet-5} ~/.omni/agents/claude.conf
-model rewrites:
-  claude-opus-5 -> claude-sonnet-5
+  mode                   "record"                 ~/.omni/omni.conf:10
+  all_traffic            false                    ~/.omni/omni.conf:15
+  record.enabled         true                     ~/.omni/omni.conf:18
+  record.redact          true                     ~/.omni/omni.conf:19
+  record.bodies          true                     ~/.omni/omni.conf:20
+  record.retention       "336h0m0s"               ~/.omni/omni.conf:21
+  adapt.on_unrepresentable "error"                  ~/.omni/omni.conf:27
+  adapt.report_changes   true                     ~/.omni/omni.conf:28
+  proxy.listen           "127.0.0.1:0"            ~/.omni/omni.conf:31
+  proxy.idle_timeout     "10m0s"                  ~/.omni/omni.conf:32
 sessions -> /Users/me/.omni/sessions
 ```
 
-:::note[The shipped defaults are opinionated]
-The `claude.conf` written by `omni init` is an example as much as a default:
-it sets `mode = "route"` and a sample `model_map` mapping Opus to Sonnet.
-Neither has any effect yet — [routing is not
-implemented](../../interception/model-routing/) — but they will once it is.
-Edit or delete them if that is not what you want; `--dry-run` is how you find
-out what is in effect.
+:::note[Every value here comes from `omni.conf`]
+The `agents/claude.conf` written by `omni init` is a commented example: it
+overrides nothing, so a fresh install records and forwards, and nothing else.
+Uncomment a key there to override the global default for `omni claude` only —
+`--dry-run` is how you confirm what is actually in effect, including which
+file set it. The commented `model_map` in that file is a preview of
+[model routing](../../interception/model-routing/), which is designed but not
+yet implemented.
 :::
 
 The `with env` block is the whole of Tier 1 interception: one base-URL

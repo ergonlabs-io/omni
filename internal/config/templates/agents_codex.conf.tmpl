@@ -1,13 +1,17 @@
 # ~/.omni/agents/codex.conf
 # Overrides ~/.omni/omni.conf for `omni codex`.
+#
+# Everything here is commented out on purpose: a fresh install of omni
+# changes nothing about how Codex behaves. Uncomment what you want.
 
-# v1 records Codex but does not rewrite it — model rewriting is Anthropic-only
-# until Phase 5. See docs/04 "Scope for v1".
-mode = "record"
+# off | record | route. Inherited from [defaults] in omni.conf unless set.
+# mode = "record"
 
 [model_map]
-# Not yet supported for codex. Keys here are validated and rejected with a
-# clear message rather than silently ignored.
+# Not supported for codex: model rewriting is Anthropic-only for now. A
+# model_map here is rejected with a clear message rather than silently
+# ignored, so this section must stay empty.
 
 [record]
-bodies = true
+# Capture request and response bodies, not just metadata.
+# bodies = true
