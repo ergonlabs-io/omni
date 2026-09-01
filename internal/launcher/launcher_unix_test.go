@@ -95,6 +95,49 @@ func TestRun_EnvAndArgsPassthrough(t *testing.T) {
 	}
 }
 
+// A child's last bytes can still be in the PTY buffer when it is reaped, so
+// draining has to finish before the master is closed. Writing a burst
+// immediately before exit is the shape that catches a premature close: it is
+// what a TUI does on its way out (final redraw, cursor restore), and losing
+// it truncates the visible session.
+func TestRun_DrainsOutputWrittenJustBeforeExit(t *testing.T) {
+	sh := findShell(t)
+
+	const lines = 200
+	var out bytes.Buffer
+	spec := Spec{
+		Path:   sh,
+		Args:   []string{"-c", "i=0; while [ $i -lt 200 ]; do echo \"line $i\"; i=$((i+1)); done"},
+		Stdin:  strings.NewReader(""),
+		Stdout: &out,
+	}
+
+	res, err := Run(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0", res.ExitCode)
+	}
+
+	got := strings.Count(out.String(), "line ")
+	if got != lines {
+		t.Errorf("captured %d of %d lines; the child's output was truncated before the pty was drained", got, lines)
+	}
+	// The final line is the one a premature close loses first.
+	if !strings.Contains(out.String(), "line 199") {
+		t.Errorf("missing the last line the child wrote; output ends with %q",
+			lastN(out.String(), 40))
+	}
+}
+
+func lastN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
+}
+
 func TestRun_NonTTYStdinSkipsRawMode(t *testing.T) {
 	sh := findShell(t)
 

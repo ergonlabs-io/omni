@@ -57,6 +57,17 @@ import (
 // "context cancellation" requirement in internal-docs/05-constraints.md §4.
 const ShutdownGrace = 5 * time.Second
 
+// DrainGrace is how long Run waits, after the child has exited, for the
+// child's final output to come out of the PTY.
+//
+// Reaping the child does not mean its last bytes have been read: they can
+// still be sitting in the PTY buffer, and closing the master discards them.
+// Normally the copy finishes the moment the last slave descriptor closes, so
+// this bound is never reached. It exists for the case where a grandchild
+// inherited the PTY and holds it open, where a truncated tail is a better
+// outcome than a session that never returns.
+const DrainGrace = 2 * time.Second
+
 // Spec describes the child process to launch and the terminal to proxy it
 // through.
 type Spec struct {

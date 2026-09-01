@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"golang.org/x/term"
@@ -156,8 +157,32 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 
 	waitErr := cmd.Wait()
 	close(copyDone)
-	_ = ptmx.Close() // unblocks the child-output copy goroutine if it hasn't already seen EOF/EIO
-	wg.Wait()
+
+	// Do not close the PTY master here. cmd.Wait returns once the child is
+	// reaped, which says nothing about whether its final bytes have been
+	// read out of the PTY yet -- and closing the master discards whatever is
+	// still buffered. Instead let the copy goroutine end the way it normally
+	// does, when the last slave descriptor closes and the read returns
+	// EOF/EIO.
+	//
+	// macOS happens to order these favorably and Linux does not, which is
+	// why this only ever showed up as a truncated tail (and a flaky test) on
+	// Linux.
+	drained := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(drained)
+	}()
+
+	select {
+	case <-drained:
+	case <-time.After(DrainGrace):
+		// Something other than the child still holds the slave open. Force
+		// the copy goroutine to unblock: losing the tail beats hanging.
+		logf("child output still open %s after exit; closing the pty", DrainGrace)
+		_ = ptmx.Close()
+		<-drained
+	}
 
 	guard.restore()
 
