@@ -52,7 +52,8 @@ If you have several installs — a released version and a local build, say —
 pin one:
 
 ```toml
-# ~/.omni/agents/claude.conf
+# ~/.omni/omni.conf
+[agents.claude]
 binary = "/Users/me/.local/bin/claude"
 ```
 
@@ -65,7 +66,8 @@ verifiable before you launch anything.
 regional endpoint, or a test server needs:
 
 ```toml
-# ~/.omni/agents/claude.conf
+# ~/.omni/omni.conf
+[agents.claude]
 upstream = "https://my-gateway.internal"
 ```
 
@@ -79,8 +81,8 @@ could exfiltrate your prompts. See
 `[env]` injects variables into the child process:
 
 ```toml
-# ~/.omni/agents/claude.conf
-[env]
+# ~/.omni/omni.conf
+[agents.claude.env]
 ANTHROPIC_LOG = "debug"
 ```
 

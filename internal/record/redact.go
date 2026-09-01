@@ -10,12 +10,17 @@ import (
 // was used (x-api-key vs Authorization: Bearer) without leaking the secret.
 const redactedValue = "[REDACTED]"
 
-// isCredentialHeader reports whether name carries a credential that must be
-// redacted before writing to disk, per internal-docs/05-constraints.md §6:
-// "Redact Authorization, x-api-key, and *-api-key in the recorder by
-// default." This also catches provider-specific variants such as
-// "anthropic-api-key".
-func isCredentialHeader(name string) bool {
+// IsCredentialHeader reports whether name carries a credential, per
+// internal-docs/05-constraints.md §6: "Redact Authorization, x-api-key, and
+// *-api-key in the recorder by default." This also catches provider-specific
+// variants such as "anthropic-api-key".
+//
+// Exported because the recorder is not the only thing that needs the
+// definition: the routing middleware must strip exactly these before
+// forwarding to another backend. One predicate, two call sites — if the set
+// omni redacts on disk ever drifted from the set it refuses to forward, one
+// of the two would be wrong, and the forwarding side is the one that leaks.
+func IsCredentialHeader(name string) bool {
 	n := strings.ToLower(name)
 	switch n {
 	case "authorization", "x-api-key":
@@ -31,7 +36,7 @@ func isCredentialHeader(name string) bool {
 func (r *Recorder) redactHeader(h http.Header) map[string][]string {
 	out := make(map[string][]string, len(h))
 	for k, v := range h {
-		if r.redact && isCredentialHeader(k) {
+		if r.redact && IsCredentialHeader(k) {
 			out[k] = []string{redactedValue}
 			continue
 		}

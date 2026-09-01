@@ -25,12 +25,11 @@ omni --dry-run claude   # show what would happen; launch nothing
 ```
 
 > [!WARNING]
-> **Phase 0: recording and reconnaissance. Not ready for daily use.**
+> **Phase 0/2: recording, plus model routing. Not yet ready for daily use.**
 >
-> The CLI, the configuration system, Tier 1 interception, and session recording
-> are real and work today. Model routing, the capability adapter, and
-> full-traffic MITM are designed but **not wired in** — a `model_map` you write
-> today is validated and then ignored. See
+> The CLI, the configuration system, Tier 1 interception, session recording,
+> and model routing are real and work today. The capability adapter and
+> full-traffic MITM are designed but **not wired in**. See
 > [What works today](#what-works-today) for the line-by-line status.
 
 ---
@@ -77,8 +76,9 @@ network path is structured, and is the only place omni does anything at all.
   Arguments after the agent name pass through untouched, and the child's exit
   code becomes omni's. `make smoke` guards it in the build.
 
-- **🚦 Model routing, on the wire.** *(designed, not yet implemented)* Rewrite
-  `claude-opus-5` to `claude-sonnet-5` for an agent that will not let you.
+- **🚦 Model routing, on the wire.** Rewrite `claude-opus-5` to
+  `claude-sonnet-5` for an agent that will not let you — or send everything
+  matching a glob to a different provider, leaving the rest on Anthropic.
 
 ## What works today
 
@@ -93,7 +93,8 @@ This project documents what it does, not what it intends to do.
 | ✅ | PTY, raw mode, `SIGWINCH`, signal forwarding, exit codes | Works |
 | ✅ | `omni init`, `config show`, `config check`, `config path` | Works |
 | ✅ | `--dry-run`, `--version`, `--mode`, `--verbose` | Works |
-| 🚧 | `model_map` / `mode = "route"` | Parsed and validated; the rewrite is not implemented |
+| ✅ | `[[route]]` rules / `mode = "route"` | Works |
+| ✅ | `[backends.*]` routing to another provider | Works |
 | 🚧 | Capability adapter | Designed |
 | 🚧 | `--all-traffic` (Tier 2 full MITM) | Validated per agent; no CA is generated yet |
 | 🚧 | `omni sessions`, `omni ca`, `omni completions` | Reserved; exit with *not yet implemented* |
@@ -209,8 +210,10 @@ exchange count, and a token summary.
 
 ## Configuration
 
-TOML, at `~/.omni/omni.conf`, with per-agent overrides in
-`~/.omni/agents/<agent>.conf` and a per-project `.omni.conf`. Seven precedence
+TOML, at `~/.omni/omni.conf` — one file holding global defaults, backends,
+and per-agent settings. An agent can optionally be split into
+`~/.omni/agents/<agent>.conf`, which wins over its inline section, and a
+per-project `.omni.conf` adds a restricted repo-local layer. Seven precedence
 layers, and `omni config show` reports which one won for every value.
 
 ```toml
@@ -231,6 +234,59 @@ omni config check                 # validate; non-zero on error
 omni config path                  # where omni thinks its home is
 ```
 
+### Routing a model somewhere else
+
+`mode = "route"` turns the rules on. Rules are an ordered list, first match
+wins; `match` is a glob against the model the agent asked for. A rule sends
+the request to a `backend`, renames the model in place with `model`, or both.
+Anything unmatched goes to the agent's own upstream, untouched.
+
+```toml
+# ~/.omni/omni.conf — one file; backends are global, rules are per-agent
+[backends.openrouter]
+base_url    = "https://openrouter.ai/api"   # serves the Messages API at /v1/messages
+api_key_env = "OPENROUTER_API_KEY"          # the name; never the key itself
+api_style   = "anthropic"
+model       = "minimax/minimax-m3:free"
+
+[agents.claude]
+mode = "route"
+
+[[agents.claude.route]]
+match   = "claude-haiku-4-5*"               # alias and dated id, one rule
+backend = "openrouter"
+
+[[agents.claude.route]]
+match = "claude-opus-*"
+model = "claude-sonnet-5"                   # same provider, cheaper model
+```
+
+Rules are ordered because globs overlap, and a TOML table has no defined
+iteration order — a map of patterns would resolve differently from run to
+run. `omni config check` rejects a rule naming an unknown backend and warns
+about one an earlier rule already covers.
+
+omni routes; it does not translate. A backend must speak the agent's own wire
+format, so `api_style` is checked against the agent's and a mismatch is
+rejected at load rather than forwarded and hoped over — point `base_url` at a
+translating gateway if you need one.
+
+Before a request leaves for a backend, the agent's credential headers are
+replaced with the backend's own — `Authorization`, `x-api-key`, and anything
+ending in `-api-key`, the same predicate the recorder redacts by. Those are
+the only headers omni removes; `anthropic-beta`, `anthropic-version`, client
+telemetry and everything else are forwarded verbatim, because omni does not
+get to decide which headers a backend wants. That replacement is made **by
+host, not by name**:
+credentials are forwarded only when the backend resolves to the same host the
+agent would have reached anyway, so a backend called `anthropic` that points
+somewhere else cannot talk omni into leaking a token there.
+
+Two things a project-local `./.omni.conf` deliberately cannot do: declare a
+backend, or write a rule naming one. Renaming a model is a local preference;
+choosing who receives your prompts and bills you for them is not a decision a
+repository you cloned gets to make.
+
 Two things are fatal rather than advisory: a non-loopback `proxy.listen`, and a
 credential-shaped value anywhere in a config file.
 
@@ -240,7 +296,7 @@ credential-shaped value anywhere in a config file.
 |---|---|---|
 | **0** | Recorder and reconnaissance | **In progress** |
 | 1 | Wire schema, byte-identical round-trip | Next |
-| 2 | Model rewriting and the capability adapter | Designed |
+| 2 | Model rewriting and backend routing | **Done**; capability adapter designed |
 | 3 | Middleware chain as an extension point | Designed |
 | 4 | Tier 2 full MITM, opt-in | Designed |
 | 5 | Second provider | Later |

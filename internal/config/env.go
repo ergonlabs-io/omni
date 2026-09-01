@@ -17,7 +17,7 @@ import (
 // Nesting uses "__" (e.g. OMNI_RECORD__REDACT -> record.redact); a single
 // "_" is part of a key's own name (e.g. all_traffic, idle_timeout) and is
 // never treated as a separator, matching every multi-word key in the TOML
-// schema. model_map and env (the two map-valued fields) cannot be set this
+// schema. route and env (the list- and map-valued fields) cannot be set this
 // way — model names routinely contain characters environment variable
 // naming can't carry unambiguously — and produce a warning Issue if
 // attempted.
@@ -79,7 +79,7 @@ func envIssue(envVar, path, source, local string, known bool, err error) []Issue
 		return []Issue{{
 			Path: path,
 			Message: fmt.Sprintf(
-				"environment variable %s does not map to a known config key %q (model_map and env cannot be set via environment variables)",
+				"environment variable %s does not map to a known config key %q (route and env cannot be set via environment variables)",
 				envVar, local,
 			),
 			Source: source,

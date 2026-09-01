@@ -1,12 +1,17 @@
 # omni.conf — omni configuration (TOML syntax)
-# Per-agent overrides live in ~/.omni/agents/<agent>.conf and win over the
-# [agents.*] sections here. See `omni config show` for effective values.
+#
+# This is the only file omni needs. Everything is in here: global defaults,
+# the backends traffic can be routed to, and per-agent overrides.
+#
+# If you prefer to split an agent out, ~/.omni/agents/<agent>.conf still
+# works and wins over the [agents.<agent>] section below. `omni config show`
+# reports which file and line won for every value.
 
 [defaults]
 # off | record | route
 #   off     passthrough, no proxy involvement beyond forwarding
 #   record  capture all traffic to ~/.omni/sessions (default)
-#   route   record + apply model_map and the capability adapter
+#   route   record + apply the routing rules and the capability adapter
 mode = "record"
 
 # Tier 2 full MITM: intercept every TLS connection the agent makes, not just
@@ -31,10 +36,57 @@ report_changes     = true      # log every mutation the adapter makes
 listen       = "127.0.0.1:0"   # ephemeral. Loopback only — do not change.
 idle_timeout = "10m"           # must exceed a plausible tool-loop duration
 
-# Inline per-agent overrides. Anything more than a line or two belongs in
-# ~/.omni/agents/<agent>.conf instead.
+
+# --- backends --------------------------------------------------------------
+# Places a routing rule can send traffic instead of the agent's own provider.
+# Backends are global (an endpoint is an endpoint); rules are per-agent,
+# because "claude-opus-5" is meaningless to Codex.
+#
+# omni routes; it does not translate. api_style must match the agent's own,
+# so point base_url at a native endpoint or at a translating gateway — a
+# mismatch is rejected at load rather than forwarded and hoped over.
+#
+# The credential is named, never written here: omni reads api_key_env from
+# the environment at launch, and a key pasted into this file is refused.
+# Omit api_key_env only for a loopback endpoint that wants no auth.
+#
+# [backends.openrouter]
+# base_url    = "https://openrouter.ai/api"   # serves /v1/messages natively
+# api_key_env = "OPENROUTER_API_KEY"
+# api_style   = "anthropic"
+# model       = "minimax/minimax-m3:free"     # what to ask this backend for
+#
+# [backends.openrouter.headers]
+# HTTP-Referer = "https://github.com/ergonlabs-io/omni"
+# X-Title      = "omni"
+#
+# [backends.local]
+# base_url  = "http://127.0.0.1:11434/v1"
+# api_style = "openai"                        # needs a translating gateway
+# model     = "qwen2.5-coder:32b"
+
+
+# --- per-agent ---------------------------------------------------------------
 [agents.claude]
 # mode = "route"
 
+# Routing rules: an ordered list, first match wins, in the order written.
+# `match` is a glob against the model the agent asked for, and nothing else —
+# that is what keeps routing deterministic, and therefore cache-safe.
+#
+# A rule sends the request to `backend`, or renames the model in place with
+# `model`, or both. An unmatched request goes to the agent's own upstream,
+# byte for byte, exactly as if routing were off.
+#
+# [[agents.claude.route]]
+# match   = "claude-haiku-4-5*"    # the alias and the dated id, in one rule
+# backend = "openrouter"
+#
+# [[agents.claude.route]]
+# match = "claude-opus-*"
+# model = "claude-sonnet-5"        # same provider, cheaper model
+
 [agents.codex]
 # mode = "record"
+# Routing is Anthropic-only for now; a rule here is rejected with a clear
+# message rather than silently ignored.

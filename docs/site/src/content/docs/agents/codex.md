@@ -34,7 +34,7 @@ refusing the feature rather than guessing.
 ## Model rewriting is unavailable
 
 Rewriting a model name means decoding the request body, and omni models the
-Anthropic Messages API only in this version. `model_map` or `--model-map` on
+Anthropic Messages API only in this version. `[[route]]` or `--model-map` on
 Codex is an error, not a silent no-op:
 
 ```

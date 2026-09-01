@@ -34,10 +34,16 @@ replace.
 | 6 | `OMNI_*` environment variables | per-invocation |
 | 7 | CLI flags | highest |
 
-Layers 3 and 4 both exist on purpose. `[agents.claude]` in `omni.conf` is for
-one-liners you want beside your global settings; `agents/claude.conf` is for
-anything substantial, and wins — the same way `conf.d` works everywhere else
-in Unix.
+Layers 3 and 4 both exist on purpose, but only layer 3 is scaffolded.
+`omni init` writes a single `omni.conf` holding everything, with per-agent
+settings in `[agents.<name>]` tables. `agents/<name>.conf` is there if you
+would rather split an agent into its own file, and wins — the same way
+`conf.d` works everywhere else in Unix.
+
+One exception to the per-key deep merge: a `[[route]]` list does not merge
+across layers. A layer that declares any rules replaces the list, because
+rules are ordered and first-match-wins, and there is no order between two
+files' lists a reader could predict.
 
 Layer 5 is read from the working directory **only**. omni does not walk up
 parent directories: ancestor-walking config is a footgun on a tool that
@@ -52,7 +58,7 @@ keys — see [Per-project config](../per-project-config/).
 # off | record | route
 #   off     passthrough, no proxy involvement beyond forwarding
 #   record  capture all traffic to ~/.omni/sessions (default)
-#   route   record + apply model_map and the capability adapter
+#   route   record + apply the [[route]] rules and the capability adapter
 mode = "record"
 
 all_traffic = false            # Tier 2 full MITM; requires a CA
@@ -76,18 +82,49 @@ idle_timeout = "10m"           # must exceed a plausible tool-loop duration
 runs, so a non-loopback bind address is refused at startup rather than
 warned about.
 
-## Per-agent config
+## Backends
 
-`~/.omni/agents/claude.conf` overrides the global file for `omni claude`:
+Global only. A backend is a destination a routing rule can target; see
+[Model routing](../../interception/model-routing/).
 
 ```toml
+[backends.openrouter]
+base_url    = "https://openrouter.ai/api"
+api_key_env = "OPENROUTER_API_KEY"   # the variable's name, never the key
+api_style   = "anthropic"
+model       = "minimax/minimax-m3:free"
+```
+
+## Per-agent config
+
+Per-agent settings go in an `[agents.<name>]` table:
+
+```toml
+[agents.claude]
 mode = "route"
 
 # binary = "/Users/me/.local/bin/claude"   # pin a version or a local build
 
-[model_map]
-# LHS is what the agent sends, RHS is what omni forwards.
-"claude-opus-5" = "claude-sonnet-5"
+# Routing rules: ordered, first match wins.
+[[agents.claude.route]]
+match   = "claude-haiku-4-5*"
+backend = "openrouter"
+
+[[agents.claude.route]]
+match = "claude-opus-*"
+model = "claude-sonnet-5"
+```
+
+The same settings in a `~/.omni/agents/claude.conf` drop-in are written flat,
+without the `agents.claude` prefix — `mode = "route"` at the top level and
+rules as `[[route]]`:
+
+```toml
+mode = "route"
+
+[[route]]
+match   = "claude-haiku-4-5*"
+backend = "openrouter"
 
 [adapt]
 on_unrepresentable = "error"
@@ -142,7 +179,7 @@ agent has started is much worse than failing in five milliseconds.
 
 - Unknown keys are an error, with a suggestion for near-misses. Silently
   ignoring a typo'd key means your config does nothing and you cannot tell.
-- `model_map` on an agent whose wire format omni cannot rewrite is an error
+- A `[[route]]` list on an agent whose wire format omni cannot rewrite is an error
   naming the limitation, not a silent no-op.
 - Durations and enum values are parsed and reported by key, with the file and
   line that set them.

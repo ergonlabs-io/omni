@@ -10,12 +10,6 @@ import (
 //go:embed templates/omni.conf.tmpl
 var omniConfTemplate []byte
 
-//go:embed templates/agents_claude.conf.tmpl
-var agentsClaudeTemplate []byte
-
-//go:embed templates/agents_codex.conf.tmpl
-var agentsCodexTemplate []byte
-
 // dirPerm and homePerm/caPerm implement the exact permissions
 // internal-docs/08-configuration.md §Bootstrap calls for: "~/.omni 0700,
 // ca/ 0700" set explicitly rather than relying on umask. Directories that
@@ -29,18 +23,22 @@ const (
 	filePerm = 0o644
 )
 
-// Init creates the omni home tree under home and writes fully-commented
-// default config files, matching the layout in
-// internal-docs/08-configuration.md:
+// Init creates the omni home tree under home and writes one fully-commented
+// default config file:
 //
 //	~/.omni/
-//	├── omni.conf
-//	├── agents/{claude,codex}.conf
+//	├── omni.conf          (everything: defaults, backends, per-agent)
+//	├── agents/            (empty — optional per-agent drop-ins live here)
 //	├── profiles.d/
 //	├── ca/                (created empty — the CA itself is generated
 //	│                        lazily on first --all-traffic, never here)
 //	├── cache/
 //	└── sessions/
+//
+// Only omni.conf is written. agents/<name>.conf remains a supported, higher
+// precedence layer for anyone who wants an agent in its own file, but
+// scaffolding one per agent made the common case — a single setting, in one
+// place — look like it needed three files to express.
 //
 // Init is idempotent: it never overwrites or removes an existing file or
 // directory. It returns the absolute paths of everything it newly created,
@@ -106,17 +104,8 @@ func Init(home string) ([]string, error) {
 		}
 	}
 
-	for _, f := range []struct {
-		path    string
-		content []byte
-	}{
-		{GlobalConfigPath(home), omniConfTemplate},
-		{AgentConfigPath(home, "claude"), agentsClaudeTemplate},
-		{AgentConfigPath(home, "codex"), agentsCodexTemplate},
-	} {
-		if err := writeFile(f.path, f.content, filePerm); err != nil {
-			return created, fmt.Errorf("config: init %s: %w", f.path, err)
-		}
+	if err := writeFile(GlobalConfigPath(home), omniConfTemplate, filePerm); err != nil {
+		return created, fmt.Errorf("config: init %s: %w", GlobalConfigPath(home), err)
 	}
 
 	return created, nil

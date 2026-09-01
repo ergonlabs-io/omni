@@ -22,10 +22,11 @@ func loadGlobal(path string) (rawGlobal, *fileLoad, error) {
 }
 
 // checkGlobalKeys validates every key present in omni.conf: top level must
-// be "defaults" or "agents"; under [defaults], keys must be in
+// be "defaults", "agents", or "backends"; under [defaults], keys must be in
 // knownDefaultsPaths; under [agents.<name>], keys must be in
 // knownAgentPaths (agent names themselves are user-chosen and unrestricted
-// here — profiles.d can register arbitrary agents).
+// here — profiles.d can register arbitrary agents); under
+// [backends.<name>], keys must be in knownBackendPaths.
 func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 	var issues []Issue
 	for topKey, topVal := range generic {
@@ -55,16 +56,39 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 				}
 				leaves := map[string]interface{}{}
 				flattenLeaves("", sub, leaves)
-				for p := range leaves {
+				for p, v := range leaves {
+					full := "agents." + agentName + "." + p
+					if p == "route" {
+						issues = append(issues, checkRouteKeys(v, full, fl.src(full))...)
+						continue
+					}
 					if !knownPath(p, knownAgentPaths, knownAgentWildcards) {
-						full := "agents." + agentName + "." + p
 						issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownAgentPaths))
+					}
+				}
+			}
+		case "backends":
+			backendsMap, ok := topVal.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for backendName, backendVal := range backendsMap {
+				sub, ok := backendVal.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				leaves := map[string]interface{}{}
+				flattenLeaves("", sub, leaves)
+				for p := range leaves {
+					if !knownPath(p, knownBackendPaths, knownBackendWildcards) {
+						full := "backends." + backendName + "." + p
+						issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownBackendPaths))
 					}
 				}
 			}
 		default:
 			issues = append(issues, unknownKeyIssue(topKey, topKey, fl.src(topKey),
-				map[string]bool{"defaults": true, "agents": true}))
+				map[string]bool{"defaults": true, "agents": true, "backends": true}))
 		}
 	}
 	return issues
@@ -88,7 +112,11 @@ func loadAgentFile(path string) (rawAgent, *fileLoad, error) {
 	}
 	leaves := map[string]interface{}{}
 	flattenLeaves("", generic, leaves)
-	for p := range leaves {
+	for p, v := range leaves {
+		if p == "route" {
+			fl.issues = append(fl.issues, checkRouteKeys(v, p, fl.src(p))...)
+			continue
+		}
 		if !knownPath(p, knownAgentPaths, knownAgentWildcards) {
 			fl.issues = append(fl.issues, unknownKeyIssue(p, p, fl.src(p), knownAgentPaths))
 		}

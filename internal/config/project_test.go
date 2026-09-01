@@ -10,7 +10,7 @@ import (
 // TestProjectConfigAllowlist is the single most important test in this
 // package: ./.omni.conf is untrusted input (you `cd` into repos you did
 // not write), and internal-docs/08-configuration.md is explicit that it
-// must be restricted to mode, model_map, and record.bodies — and must NOT
+// must be restricted to mode, route, and record.bodies — and must NOT
 // be able to set binary, upstream, all_traffic, record.redact, or
 // proxy.listen. `binary` in particular would be arbitrary code execution on
 // cd if this allowlist had a hole in it.
@@ -21,8 +21,9 @@ func TestProjectConfigAllowlist(t *testing.T) {
 		writeTestFile(t, ProjectConfigName, `
 mode = "route"
 
-[model_map]
-"claude-opus-5" = "claude-sonnet-5"
+[[route]]
+match = "claude-opus-5"
+model = "claude-sonnet-5"
 
 [record]
 bodies = false
@@ -37,8 +38,8 @@ bodies = false
 		if !strings.Contains(e.Mode.Source, ProjectConfigName) {
 			t.Errorf("mode source = %q, want %s", e.Mode.Source, ProjectConfigName)
 		}
-		if got := e.ModelMap.V["claude-opus-5"]; got != "claude-sonnet-5" {
-			t.Errorf("model_map[claude-opus-5] = %q, want claude-sonnet-5", got)
+		if len(e.Routes.V) != 1 || e.Routes.V[0].Model != "claude-sonnet-5" {
+			t.Errorf("routes = %+v, want the rename honored", e.Routes.V)
 		}
 		if e.Record.Bodies.V != false {
 			t.Errorf("record.bodies = %v, want false", e.Record.Bodies.V)
@@ -107,14 +108,14 @@ listen = "0.0.0.0:9999"`,
 				// A warning must be recorded so the user can see it was
 				// dropped, per "ignore anything else with a warning".
 				found := false
-				for _, is := range e.Issues {
+				for _, is := range e.Check() {
 					if strings.Contains(is.Message, "not permitted in project config") &&
 						is.Level == LevelWarning {
 						found = true
 					}
 				}
 				if !found {
-					t.Errorf("expected a LevelWarning issue about a disallowed project-config key, got: %+v", e.Issues)
+					t.Errorf("expected a LevelWarning issue about a disallowed project-config key, got: %+v", e.Check())
 				}
 			})
 		}

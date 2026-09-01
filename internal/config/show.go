@@ -16,8 +16,8 @@ type Row struct {
 }
 
 // Rows renders every effective value as a Row, in a stable, readable order.
-// Unset optional fields (binary/upstream overrides, an empty model_map or
-// env) are omitted rather than shown as empty strings.
+// Unset optional fields (binary/upstream overrides, no routes, no
+// backends, an empty env) are omitted rather than shown as empty strings.
 func (e *Effective) Rows() []Row {
 	var rows []Row
 	add := func(path, val, source string) { rows = append(rows, Row{path, val, source}) }
@@ -38,8 +38,12 @@ func (e *Effective) Rows() []Row {
 	add("adapt.report_changes", fmt.Sprintf("%v", e.Adapt.ReportChanges.V), e.Adapt.ReportChanges.Source)
 	add("proxy.listen", fmt.Sprintf("%q", e.Proxy.Listen.V), e.Proxy.Listen.Source)
 	add("proxy.idle_timeout", fmt.Sprintf("%q", e.Proxy.IdleTimeout.V.String()), e.Proxy.IdleTimeout.Source)
-	if len(e.ModelMap.V) > 0 {
-		add("model_map", formatArrowMap(e.ModelMap.V), e.ModelMap.Source)
+	for _, name := range sortedBackendNames(e.Backends.V) {
+		b := e.Backends.V[name]
+		add("backends."+name, fmt.Sprintf("%s (%s, $%s)", b.BaseURL, b.APIStyle, b.APIKeyEnv), b.Source)
+	}
+	for i, r := range e.Routes.V {
+		add(fmt.Sprintf("route[%d]", i), formatRule(r), r.Source)
 	}
 	if len(e.Env.V) > 0 {
 		add("env", formatKVMap(e.Env.V), e.Env.Source)
@@ -66,6 +70,19 @@ func (e *Effective) Show() string {
 		fmt.Fprintf(&b, "%-*s  %-*s  %s\n", wPath, r.Path, wVal, r.Value, r.Source)
 	}
 	return b.String()
+}
+
+// formatRule renders a rule as written, before backend resolution — Rows
+// reports configuration, and Resolve reports what it turns into.
+func formatRule(r Rule) string {
+	switch {
+	case r.Backend != "" && r.Model != "":
+		return fmt.Sprintf("%s → %s @ %s", r.Match, r.Model, r.Backend)
+	case r.Backend != "":
+		return fmt.Sprintf("%s → @%s", r.Match, r.Backend)
+	default:
+		return fmt.Sprintf("%s → %s", r.Match, r.Model)
+	}
 }
 
 func formatArrowMap(m map[string]string) string {

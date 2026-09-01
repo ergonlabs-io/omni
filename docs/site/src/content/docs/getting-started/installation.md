@@ -96,11 +96,11 @@ omni --help           # includes which agents were detected on PATH
 or not found, which answers "is my agent installed" without a second command.
 
 :::note[`omni init` never overrides your agent's behavior]
-The generated `agents/claude.conf` is a commented example: every key in it is
-commented out, so a fresh install changes nothing about how the agent runs
-beyond recording. `omni init` also never rewrites a file that already exists,
-so anything you put there is yours to maintain. Run `omni --dry-run claude`
-to see the effective config and the file each value came from.
+`omni init` writes a single `omni.conf`, and every key in it that would
+change how an agent runs is commented out — a fresh install changes nothing
+beyond recording. It also never rewrites a file that already exists, so
+anything you put there is yours to maintain. Run `omni --dry-run claude` to
+see the effective config and the line each value came from.
 :::
 
 Next: run your first session in the [Quickstart](../quickstart/).

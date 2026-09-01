@@ -1,18 +1,18 @@
 package config
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // loadProjectConfig reads and filters ./.omni.conf, the per-project,
 // repo-local config layer. This is the SECURITY-CRITICAL boundary in this
 // package: a repo you `cd` into and did not write is untrusted input, and
 // must not be able to change omni's binary, upstream, redaction, traffic
-// scope, or proxy bind address. Only mode, model_map, and record.bodies are
+// scope, or proxy bind address. Only mode, route, and record.bodies are
 // honored; every other key found in the file is dropped and reported as a
 // LevelWarning Issue (not an error — a stray key here is a mistake, not a
 // reason to fail the launch).
+//
+// [[route]] is honored here only in its rename form. A rule naming a
+// backend is rejected outright — see assignProjectRoutes.
 //
 // Unlike loadGlobal/loadAgentFile, this does not decode into a typed
 // struct first and then check keys — it walks the untyped document and
@@ -38,7 +38,7 @@ func loadProjectConfig(path string) (rawAgent, *fileLoad, error) {
 			fl.issues = append(fl.issues, Issue{
 				Path: p,
 				Message: fmt.Sprintf(
-					"%q is not permitted in project config (./.omni.conf may only set mode, model_map, record.bodies) — ignored",
+					"%q is not permitted in project config (./.omni.conf may only set mode, route, record.bodies) — ignored",
 					p,
 				),
 				Source: fl.src(p),
@@ -75,26 +75,73 @@ func assignProjectLeaf(dst *rawAgent, path string, v interface{}, source string)
 		dst.Record.Bodies = &b
 		return nil
 
-	case path == "model_map" || strings.HasPrefix(path, "model_map."):
-		key := strings.TrimPrefix(path, "model_map.")
-		if key == "" || key == path {
-			// "model_map" itself as a non-table leaf, e.g. `model_map = 1`.
-			iss := typeIssue(path, "table", v, source)
-			return &iss
-		}
-		s, ok := v.(string)
-		if !ok {
-			iss := typeIssue(path, "string", v, source)
-			return &iss
-		}
-		if dst.ModelMap == nil {
-			dst.ModelMap = map[string]string{}
-		}
-		dst.ModelMap[key] = s
-		return nil
+	case path == "route":
+		return assignProjectRoutes(dst, path, v, source)
 
 	default:
 		// Unreachable: caller only invokes this after projectAllowedPath(path).
 		return nil
+	}
+}
+
+// assignProjectRoutes accepts a project config's [[route]] list, but only
+// the rules that rename a model within the agent's own provider.
+//
+// A rule carrying `backend` is refused. Renaming a model is a local
+// preference a repository can reasonably express; choosing which third
+// party receives your prompts, and bills you for them, is not — and the
+// backend it named would be one the *user* declared globally, which makes
+// the escalation quiet rather than obvious. See loadProjectConfig.
+func assignProjectRoutes(dst *rawAgent, path string, v interface{}, source string) *Issue {
+	elems, ok := routeElements(v)
+	if !ok {
+		iss := typeIssue(path, "array of tables", v, source)
+		return &iss
+	}
+	for _, el := range elems {
+		if b, present := el["backend"]; present {
+			return &Issue{
+				Path: path,
+				Message: fmt.Sprintf(
+					"project config may not route to a backend (%v) — ./.omni.conf can rename a "+
+						"model but not change its destination; move this to ~/.omni/omni.conf if you meant it",
+					b,
+				),
+				Source: source,
+				Level:  LevelError,
+			}
+		}
+	}
+	for _, el := range elems {
+		var r rawRoute
+		if m, ok := el["match"].(string); ok {
+			r.Match = &m
+		}
+		if m, ok := el["model"].(string); ok {
+			r.Model = &m
+		}
+		dst.Route = append(dst.Route, r)
+	}
+	return nil
+}
+
+// routeElements normalizes the shapes BurntSushi/toml can hand back for an
+// array of tables.
+func routeElements(v interface{}) ([]map[string]interface{}, bool) {
+	switch t := v.(type) {
+	case []map[string]interface{}:
+		return t, true
+	case []interface{}:
+		out := make([]map[string]interface{}, 0, len(t))
+		for _, el := range t {
+			m, ok := el.(map[string]interface{})
+			if !ok {
+				return nil, false
+			}
+			out = append(out, m)
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }

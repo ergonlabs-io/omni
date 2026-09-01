@@ -58,13 +58,13 @@ sessions -> /Users/me/.omni/sessions
 ```
 
 :::note[Every value here comes from `omni.conf`]
-The `agents/claude.conf` written by `omni init` is a commented example: it
-overrides nothing, so a fresh install records and forwards, and nothing else.
-Uncomment a key there to override the global default for `omni claude` only —
-`--dry-run` is how you confirm what is actually in effect, including which
-file set it. The commented `model_map` in that file is a preview of
-[model routing](../../interception/model-routing/), which is designed but not
-yet implemented.
+`omni init` writes one file, and every key in it that would change your
+agent's behavior is commented out — so a fresh install records and forwards,
+and nothing else. Uncomment a key under `[agents.claude]` to override a
+global default for `omni claude` only, and `--dry-run` to confirm what is
+actually in effect, including which line set it. The commented
+`[[agents.claude.route]]` block is
+[model routing](../../interception/model-routing/).
 :::
 
 The `with env` block is the whole of Tier 1 interception: one base-URL
@@ -140,7 +140,7 @@ omni --mode off claude
 
 The proxy still runs and still forwards; nothing is written to disk. To
 change the default, edit `mode` in `~/.omni/omni.conf` or
-`~/.omni/agents/claude.conf` — see
+the `[agents.claude]` section of `~/.omni/omni.conf` — see
 [Configuration file](../../configuration/configuration-file/).
 
 ## Where to go next
