@@ -1,0 +1,136 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func TestInitCreatesTree(t *testing.T) {
+	home := testHome(t)
+
+	created, err := Init(home)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if len(created) == 0 {
+		t.Fatalf("Init created nothing on a fresh home")
+	}
+
+	wantFiles := []string{
+		GlobalConfigPath(home),
+		AgentConfigPath(home, "claude"),
+		AgentConfigPath(home, "codex"),
+	}
+	for _, p := range wantFiles {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("expected %s to exist: %v", p, err)
+		}
+	}
+
+	wantDirs := []string{
+		filepath.Join(home, "agents"),
+		filepath.Join(home, "profiles.d"),
+		filepath.Join(home, "ca"),
+		filepath.Join(home, "cache"),
+		filepath.Join(home, "sessions"),
+	}
+	for _, d := range wantDirs {
+		fi, err := os.Stat(d)
+		if err != nil {
+			t.Errorf("expected dir %s to exist: %v", d, err)
+			continue
+		}
+		if !fi.IsDir() {
+			t.Errorf("%s exists but is not a directory", d)
+		}
+	}
+
+	// The CA cert/key themselves must NOT be generated at init — only the
+	// directory. Tier 2 CA generation is lazy, on first --all-traffic.
+	caDir := filepath.Join(home, "ca")
+	entries, err := os.ReadDir(caDir)
+	if err != nil {
+		t.Fatalf("read ca dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("ca/ should be empty after Init, got: %v", entries)
+	}
+
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(home); err == nil {
+			if perm := fi.Mode().Perm(); perm != homePerm {
+				t.Errorf("home perm = %o, want %o", perm, homePerm)
+			}
+		}
+		if fi, err := os.Stat(caDir); err == nil {
+			if perm := fi.Mode().Perm(); perm != caPerm {
+				t.Errorf("ca/ perm = %o, want %o", perm, caPerm)
+			}
+		}
+	}
+}
+
+func TestInitIsIdempotent(t *testing.T) {
+	home := testHome(t)
+
+	if _, err := Init(home); err != nil {
+		t.Fatalf("first Init: %v", err)
+	}
+
+	// Modify a generated file so we can tell whether a second Init touches it.
+	customContent := "# customized by the user\nmode = \"route\"\n"
+	claudeConf := AgentConfigPath(home, "claude")
+	if err := os.WriteFile(claudeConf, []byte(customContent), 0o644); err != nil {
+		t.Fatalf("customize claude.conf: %v", err)
+	}
+
+	created, err := Init(home)
+	if err != nil {
+		t.Fatalf("second Init: %v", err)
+	}
+	if len(created) != 0 {
+		t.Errorf("second Init on an already-initialized home created: %v, want nothing", created)
+	}
+
+	got, err := os.ReadFile(claudeConf)
+	if err != nil {
+		t.Fatalf("read claude.conf: %v", err)
+	}
+	if string(got) != customContent {
+		t.Errorf("Init clobbered a user-modified file; got %q, want %q", got, customContent)
+	}
+}
+
+// TestInitBootstrappedConfigLoads checks that the files Init writes are
+// themselves valid config that LoadFrom can parse without error — i.e. the
+// generated defaults are not just documentation, they work.
+func TestInitBootstrappedConfigLoads(t *testing.T) {
+	home := testHome(t)
+	testCWD(t)
+	if _, err := Init(home); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	e, err := LoadFrom(home, "claude")
+	if err != nil {
+		t.Fatalf("LoadFrom after Init: %v (issues: %+v)", err, e.Issues)
+	}
+	for _, is := range e.Issues {
+		if is.Level == LevelError {
+			t.Errorf("bootstrapped config has an error-level issue: %s", is)
+		}
+	}
+	if e.Mode.V != ModeRoute {
+		t.Errorf("claude mode = %q, want route (per the generated agents/claude.conf template)", e.Mode.V)
+	}
+
+	eCodex, err := LoadFrom(home, "codex")
+	if err != nil {
+		t.Fatalf("LoadFrom codex after Init: %v", err)
+	}
+	if eCodex.Mode.V != ModeRecord {
+		t.Errorf("codex mode = %q, want record", eCodex.Mode.V)
+	}
+}

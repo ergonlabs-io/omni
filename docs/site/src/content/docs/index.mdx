@@ -1,0 +1,36 @@
+---
+title: omni
+description: Run any coding agent CLI through a controlled interception proxy.
+template: splash
+---
+
+`omni` launches a coding agent in a PTY with its API traffic redirected
+through a local proxy. That gives one interception point — recording, model
+routing, policy — that works the same across agents which share no code.
+
+```sh
+omni claude          # launch Claude Code; record all LLM traffic
+omni codex           # same, for Codex
+omni --mode route --model-map claude-opus-5=claude-sonnet-5 claude
+```
+
+:::caution[Phase 0 — in progress]
+Recording and reconnaissance. The CLI, the configuration system, session
+recording, and the installer are implemented. Routing, the capability
+adapter, and all-traffic interception are designed but not yet wired in;
+every page that describes them says so at the top.
+:::
+
+- **[Getting started](getting-started/introduction/)**: what omni is, how to
+  install it, and a [first session](getting-started/quickstart/) end to end.
+- **[Configuration](configuration/configuration-file/)**: the `~/.omni` tree,
+  the TOML format, and the seven precedence layers.
+- **[Interception](interception/how-it-works/)**: the two data paths, what the
+  proxy may do to your traffic, and where the CA would fit.
+- **[Agents](agents/claude-code/)**: what is supported for Claude Code and
+  Codex, and what a profile has to declare.
+- **[Sessions](sessions/recorded-sessions/)**: the recorded format, the token
+  totals worth watching, and what redaction does and does not cover.
+- **[Reference](reference/cli/)**: flags, subcommands, exit codes, the full
+  [config schema](reference/config-schema/), and
+  [troubleshooting](reference/troubleshooting/).

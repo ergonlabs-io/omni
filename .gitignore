@@ -1,0 +1,25 @@
+bin/
+coverage.out
+*.test
+
+# Recorded sessions may contain source code and credentials. Never commit
+# these from a working directory — the sanctioned corpus lives in
+# testdata/corpus/ and is redacted at capture time. See internal-docs/07.
+sessions/
+# ...but the docs have a legitimate `sessions/` section. The rule above is
+# deliberately unanchored — a recorded session dropped anywhere in a working
+# tree must never be committed — so the docs directory is re-included by name.
+!docs/site/src/content/docs/sessions/
+.omni.conf.local
+
+dist/
+
+# Design docs are internal. They are the reasoning behind the code, not
+# documentation for people who clone it, and they say things about routing
+# economics and interception that we do not publish.
+internal-docs/
+
+# The docs site's dependencies (238 MB) and any binary built into the repo
+# root by `go build .` rather than into bin/.
+node_modules/
+/omni

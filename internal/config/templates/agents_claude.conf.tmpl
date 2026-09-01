@@ -1,0 +1,24 @@
+# ~/.omni/agents/claude.conf
+# Overrides ~/.omni/omni.conf for `omni claude`.
+
+mode = "route"
+
+# Override the launched executable. Useful for pinning a version or pointing
+# at a local build.
+# binary = "/Users/me/.local/bin/claude"
+
+[model_map]
+# Rewrite model names on the wire. LHS is what the agent sends, RHS is what we
+# forward. Sticky per session — see docs/05 §1 on why this is not per-request.
+"claude-opus-5" = "claude-sonnet-5"
+
+[adapt]
+on_unrepresentable = "error"
+
+[record]
+bodies = true
+
+[env]
+# Extra env injected into the child. Does not override omni's own steering
+# vars (ANTHROPIC_BASE_URL etc.) — those always win.
+# ANTHROPIC_LOG = "debug"

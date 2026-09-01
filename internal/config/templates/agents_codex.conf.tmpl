@@ -1,0 +1,13 @@
+# ~/.omni/agents/codex.conf
+# Overrides ~/.omni/omni.conf for `omni codex`.
+
+# v1 records Codex but does not rewrite it — model rewriting is Anthropic-only
+# until Phase 5. See docs/04 "Scope for v1".
+mode = "record"
+
+[model_map]
+# Not yet supported for codex. Keys here are validated and rejected with a
+# clear message rather than silently ignored.
+
+[record]
+bodies = true

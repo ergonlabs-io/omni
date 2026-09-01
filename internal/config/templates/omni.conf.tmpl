@@ -1,0 +1,37 @@
+# omni.conf — omni configuration (TOML syntax)
+# Per-agent overrides live in ~/.omni/agents/<agent>.conf and win over the
+# [agents.*] sections here. See `omni config show` for effective values.
+
+[defaults]
+# off | record | route
+#   off     passthrough, no proxy involvement beyond forwarding
+#   record  capture all traffic to ~/.omni/sessions (default)
+#   route   record + apply model_map and the capability adapter
+mode = "record"
+
+# Tier 2 full MITM. Requires a CA and per-runtime trust. See docs/03.
+all_traffic = false
+
+[defaults.record]
+enabled   = true
+redact    = true      # strip Authorization / x-api-key / *-api-key
+bodies    = true      # request+response bodies, not just metadata
+retention = "14d"     # prune sessions older than this on startup
+
+[defaults.adapt]
+# What to do when the source request uses a feature the target model cannot
+# express. "error" is the default and the safe choice — see docs/04.
+on_unrepresentable = "error"   # error | warn
+report_changes     = true      # log every mutation the adapter makes
+
+[defaults.proxy]
+listen       = "127.0.0.1:0"   # ephemeral. Loopback only — do not change.
+idle_timeout = "10m"           # must exceed a plausible tool-loop duration
+
+# Inline per-agent overrides. Anything more than a line or two belongs in
+# ~/.omni/agents/<agent>.conf instead.
+[agents.claude]
+# mode = "route"
+
+[agents.codex]
+# mode = "record"
