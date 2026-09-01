@@ -7,13 +7,13 @@
 **omni** launches coding-agent CLIs — [Claude Code](https://claude.com/claude-code),
 [Codex](https://openai.com/codex/) — in a pseudo-terminal with their LLM traffic
 redirected through a proxy on your own machine. That gives you a single place to
-record, inspect, and eventually reroute every model call, across agents that
-share no code with each other.
+record, inspect, and reroute every model call, across agents that share no
+code with each other.
 
 [![CI](https://github.com/ergonlabs-io/omni/actions/workflows/ci.yml/badge.svg)](https://github.com/ergonlabs-io/omni/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/ergonlabs-io/omni)](go.mod)
-![Status: Phase 0](https://img.shields.io/badge/status-phase%200%20%C2%B7%20alpha-orange.svg)
+![Status: alpha](https://img.shields.io/badge/status-phase%200%2B2%20%C2%B7%20alpha-orange.svg)
 ![Platform: macOS and Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)
 
 </div>
@@ -45,7 +45,7 @@ what omni does first, and the reason recording ships before routing.
 
 ```
 your terminal ──PTY──▶ claude ──HTTP──▶ omni ──HTTPS──▶ api.anthropic.com
-                          │                │
+                          │                │              or a routed backend
              byte passthrough ─┘           └─ recorded, then forwarded
 ```
 
@@ -67,9 +67,12 @@ network path is structured, and is the only place omni does anything at all.
   Codex have nothing in common internally. Through omni they have one config
   system, one session format, and one place to intervene.
 
-- **🔒 Credentials redacted before they hit disk.** `Authorization`, `x-api-key`,
-  and friends are stripped at capture time, on by default. Config files that
-  contain a credential-shaped value are refused outright.
+- **🔒 Credentials never reach disk, or a third party.** `Authorization`,
+  `x-api-key`, and anything `*-api-key` have their values replaced with
+  `[REDACTED]` at capture time, on by default — the header name is kept, so a
+  session still shows which auth shape was used. The same predicate decides
+  what is removed before a request is routed to another backend. Config files
+  containing a credential-shaped value are refused outright.
 
 - **👻 Invisible by design.** omni's diagnostics go to stderr; stdout belongs
   to the child, because any byte omni writes there corrupts a full-screen TUI.
@@ -92,7 +95,7 @@ This project documents what it does, not what it intends to do.
 | ✅ | Layered config, 7 precedence layers with provenance | Works |
 | ✅ | PTY, raw mode, `SIGWINCH`, signal forwarding, exit codes | Works |
 | ✅ | `omni init`, `config show`, `config check`, `config path` | Works |
-| ✅ | `--dry-run`, `--version`, `--mode`, `--verbose` | Works |
+| ✅ | `--dry-run`, `--version`, `--mode`, `--verbose`, `--model-map` | Works |
 | ✅ | `[[route]]` rules / `mode = "route"` | Works |
 | ✅ | `[backends.*]` routing to another provider | Works |
 | 🚧 | Capability adapter | Designed |
@@ -277,10 +280,10 @@ ending in `-api-key`, the same predicate the recorder redacts by. Those are
 the only headers omni removes; `anthropic-beta`, `anthropic-version`, client
 telemetry and everything else are forwarded verbatim, because omni does not
 get to decide which headers a backend wants. That replacement is made **by
-host, not by name**:
-credentials are forwarded only when the backend resolves to the same host the
-agent would have reached anyway, so a backend called `anthropic` that points
-somewhere else cannot talk omni into leaking a token there.
+host, not by name**: credentials are forwarded only when the backend resolves
+to the same host the agent would have reached anyway, so a backend called
+`anthropic` that points somewhere else cannot talk omni into leaking a token
+there.
 
 Two things a project-local `./.omni.conf` deliberately cannot do: declare a
 backend, or write a rule naming one. Renaming a model is a local preference;
@@ -295,15 +298,31 @@ credential-shaped value anywhere in a config file.
 | Phase | | |
 |---|---|---|
 | **0** | Recorder and reconnaissance | **In progress** |
-| 1 | Wire schema, byte-identical round-trip | Next |
+| 1 | Wire schema, byte-identical round-trip | **Skipped so far** — see below |
 | 2 | Model rewriting and backend routing | **Done**; capability adapter designed |
-| 3 | Middleware chain as an extension point | Designed |
+| 3 | Middleware chain as an extension point | Partly — routing uses the seam; not yet a public one |
 | 4 | Tier 2 full MITM, opt-in | Designed |
 | 5 | Second provider | Later |
 
 Recording comes first because every later phase is written against the corpus
 it produces. Cross-provider translation — making Codex talk to Anthropic — is
 an explicit non-goal.
+
+> [!NOTE]
+> **Phase 2 landed before Phase 1, which the plan advised against.** Phase 1
+> is the byte-identical round-trip harness — the gate that proves omni can
+> take a request apart and put it back together without perturbing a cache
+> breakpoint, and so without silently costing you money.
+>
+> What stands in for it today: a request no rule matches is never decoded or
+> re-encoded at all, and rewriting a matched one splices the single `model`
+> string value in place rather than re-serializing the document, so key
+> order, whitespace, escapes, and every `cache_control` marker survive byte
+> for byte. Both are pinned by tests. What is still missing is the
+> round-trip corpus replay that would prove it across real traffic rather
+> than fixtures, and a cache-hit-rate comparison between a recorded baseline
+> and a routed session. Until that exists, treat routing as working but
+> unproven at scale.
 
 ## Docs
 
