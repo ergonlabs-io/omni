@@ -1,6 +1,6 @@
 ---
 title: Configuration file
-summary: The ~/.omni tree, omni.conf's TOML keys, the six precedence layers,
+summary: The ~/.omni tree, omni.conf's TOML keys, the seven precedence layers,
   and how to find out which layer set a value.
 last_updated: 2026-08-31
 related:
