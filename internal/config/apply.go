@@ -43,16 +43,7 @@ func applyAgent(e *Effective, r rawAgent, loc locator, issues *[]Issue) {
 	if r.Upstream != nil {
 		e.Upstream = Value[string]{*r.Upstream, loc("upstream")}
 	}
-	if len(r.ModelMap) > 0 {
-		merged := make(map[string]string, len(e.ModelMap.V)+len(r.ModelMap))
-		for k, v := range e.ModelMap.V {
-			merged[k] = v
-		}
-		for k, v := range r.ModelMap {
-			merged[k] = v
-		}
-		e.ModelMap = Value[map[string]string]{merged, loc("model_map")}
-	}
+	applyRoutes(e, r.Route, loc, issues)
 	if len(r.Env) > 0 {
 		merged := make(map[string]string, len(e.Env.V)+len(r.Env))
 		for k, v := range e.Env.V {

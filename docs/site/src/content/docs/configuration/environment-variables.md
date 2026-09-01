@@ -54,23 +54,25 @@ not applicable.
 
 ## What the environment cannot set
 
-`model_map` and `env` are maps whose keys are yours, not the schema's. Model
-names contain characters that environment-variable names cannot carry
-unambiguously, so omni does not try:
+`route` is an ordered list and `env` is a map of your own keys, not the
+schema's. Neither has a sensible flattening into environment-variable names —
+a list needs indices and model names carry characters a variable name cannot
+hold unambiguously — so omni does not try:
 
 ```sh
-OMNI_MODEL_MAP__CLAUDE_OPUS_5=claude-sonnet-5     # does not work
+OMNI_ROUTE__CLAUDE_OPUS_5=claude-sonnet-5     # does not work
 ```
 
 ```
-omni: model_map.claude_opus_5: environment variable
-  OMNI_MODEL_MAP__CLAUDE_OPUS_5 does not map to a known config key
-  "model_map.claude_opus_5" (model_map and env cannot be set via environment
-  variables) ($OMNI_MODEL_MAP__CLAUDE_OPUS_5)
+omni: route.claude_opus_5: environment variable
+  OMNI_ROUTE__CLAUDE_OPUS_5 does not map to a known config key
+  "route.claude_opus_5" (route and env cannot be set via environment
+  variables) ($OMNI_ROUTE__CLAUDE_OPUS_5)
 ```
 
-Use `--model-map from=to` on the command line for a one-off rewrite, or a
-`[model_map]` table in a config file for a durable one.
+Use `--model-map from=to` on the command line for a one-off rewrite — it
+becomes a rule ahead of the configured ones — or a `[[route]]` list in a
+config file for a durable one.
 
 The same warning appears for any `OMNI_*` variable that does not name a real
 key. A typo'd variable that silently did nothing would be worse: your config

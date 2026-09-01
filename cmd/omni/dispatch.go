@@ -30,7 +30,7 @@ func runAgent(inv *Invocation) int {
 
 	if _, err := p.Resolve(); err != nil {
 		errorf("%v\n", err)
-		fmt.Fprintf(os.Stderr, "  install %s, or set its path in ~/.omni/agents/%s.conf\n",
+		fmt.Fprintf(os.Stderr, "  install %s, or set `binary` under [agents.%s] in ~/.omni/omni.conf\n",
 			p.Binary, p.Name)
 		return exitUnavailable
 	}
@@ -93,7 +93,15 @@ func runAgent(inv *Invocation) int {
 		}
 	}
 
-	if err := eff.ModelMapError(p.APIStyle.CanRewrite()); err != nil {
+	// --model-map is layer 7 for routing: each flag becomes a rule ahead of
+	// the file-configured ones, so a one-off rewrite wins over config
+	// without the user having to edit anything.
+	if err := applyModelMapFlags(eff, inv.All("--model-map")); err != nil {
+		errorf("%v", err)
+		return exitUsage
+	}
+
+	if err := eff.RoutingError(p.APIStyle.CanRewrite()); err != nil {
 		errorf("%v", err)
 		return exitUsage
 	}

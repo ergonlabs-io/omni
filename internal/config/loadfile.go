@@ -83,3 +83,25 @@ func typeIssue(path, want string, got interface{}, source string) Issue {
 		Level:   LevelError,
 	}
 }
+
+// checkRouteKeys validates the keys inside each element of a [[route]]
+// array. flattenLeaves stops at the array — it only descends into tables —
+// so a rule's own keys would otherwise never be checked, and a typo'd
+// `backends = "openrouter"` would be silently dropped rather than reported.
+func checkRouteKeys(v interface{}, fullPath, source string) []Issue {
+	elems, ok := routeElements(v)
+	if !ok {
+		return []Issue{typeIssue(fullPath, "array of tables", v, source)}
+	}
+	var issues []Issue
+	for i, el := range elems {
+		for k := range el {
+			if knownRoutePaths[k] {
+				continue
+			}
+			p := fmt.Sprintf("%s[%d].%s", fullPath, i, k)
+			issues = append(issues, unknownKeyIssue(p, k, source, knownRoutePaths))
+		}
+	}
+	return issues
+}

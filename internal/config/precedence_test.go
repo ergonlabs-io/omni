@@ -173,29 +173,31 @@ bodies = false
 	}
 }
 
-// TestModelMapMergeAcrossLayers checks model_map merges key-by-key rather
-// than the last layer's table replacing the whole map.
-func TestModelMapMergeAcrossLayers(t *testing.T) {
+// TestRuleListReplacedAcrossLayers checks that a later layer's [[route]]
+// list replaces the earlier one rather than merging into it. Rules are
+// ordered and first-match-wins, so a merged list would need a defined
+// cross-layer order — and there is none a reader could predict.
+func TestRuleListReplacedAcrossLayers(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-
 	writeTestFile(t, GlobalConfigPath(home), `
-[agents.claude.model_map]
-"claude-opus-5" = "claude-sonnet-5"
+[[agents.claude.route]]
+match = "claude-opus-5"
+model = "claude-sonnet-5"
 `)
 	writeTestFile(t, AgentConfigPath(home, "claude"), `
-[model_map]
-"claude-haiku-5" = "claude-sonnet-5"
+[[route]]
+match = "claude-haiku-5"
+model = "claude-sonnet-5"
 `)
-
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := e.ModelMap.V["claude-opus-5"]; got != "claude-sonnet-5" {
-		t.Errorf("model_map[claude-opus-5] = %q, want claude-sonnet-5 (from global inline)", got)
+	if len(e.Routes.V) != 1 {
+		t.Fatalf("got %d rules, want only the drop-in's: %+v", len(e.Routes.V), e.Routes.V)
 	}
-	if got := e.ModelMap.V["claude-haiku-5"]; got != "claude-sonnet-5" {
-		t.Errorf("model_map[claude-haiku-5] = %q, want claude-sonnet-5 (from drop-in)", got)
+	if e.Routes.V[0].Match != "claude-haiku-5" {
+		t.Errorf("match = %q, want the drop-in's rule to win", e.Routes.V[0].Match)
 	}
 }

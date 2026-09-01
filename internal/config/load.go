@@ -58,7 +58,7 @@ func LoadFrom(home, agent string) (*Effective, error) {
 	runChecks(e)
 
 	if e.HasFatal() {
-		return e, fmt.Errorf("config: refusing to load: %s", firstFatal(e.Issues))
+		return e, fmt.Errorf("config: refusing to load: %s", firstFatal(e.allIssues()))
 	}
 	return e, nil
 }
@@ -73,6 +73,9 @@ func loadGlobalLayer(e *Effective, home, agent string) error {
 		return fmt.Errorf("config: %s: %w", path, err)
 	}
 	applyDefaults(e, g.Defaults, func(p string) string { return fl.src("defaults." + p) }, &e.Issues)
+	// Backends are global-only: no agent, project, or env layer declares
+	// them. See Backend's doc comment for why a repo-local file must not.
+	applyBackends(e, g.Backends, fl.src, &e.Issues)
 	if av, ok := g.Agents[agent]; ok {
 		applyAgent(e, av, func(p string) string { return fl.src("agents." + agent + "." + p) }, &e.Issues)
 	}
@@ -159,7 +162,7 @@ func (e *Effective) Override(overrides map[string]string, source string) error {
 	applyDefaults(e, d, func(string) string { return source }, &e.Issues)
 	runChecks(e)
 	if e.HasFatal() {
-		return fmt.Errorf("config: refusing override: %s", firstFatal(e.Issues))
+		return fmt.Errorf("config: refusing override: %s", firstFatal(e.allIssues()))
 	}
 	return nil
 }

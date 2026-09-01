@@ -1,12 +1,16 @@
 // Package proxy implements omni's interception proxy: an HTTP server bound
 // to loopback that stands between a coding agent and its real upstream API.
 //
-// Phase 0 scope (see internal-docs/06-implementation-plan.md) is Tier 1
-// only: a plain reverse proxy that mutates nothing. No model rewriting, no
-// capability adaptation, no TLS MITM, no CONNECT tunneling — those are later
+// Tier 1 only: no TLS MITM and no CONNECT tunneling — those are later
 // phases. A faithful, byte-identical, non-buffering passthrough is the
-// entire deliverable here; see internal-docs/05-constraints.md §§1-3 for why
-// that is harder than it sounds.
+// baseline; see internal-docs/05-constraints.md §§1-3 for why that is harder
+// than it sounds.
+//
+// On top of that baseline, [RoutingMiddleware] implements model rewriting
+// and per-model backend selection (mode = "route"). Routing is opt-in, and
+// a request no route claims is forwarded exactly as byte-identically as it
+// would be with routing switched off. Capability adaptation is still a
+// later phase.
 package proxy
 
 import (
@@ -53,9 +57,9 @@ type Config struct {
 	// reachable off-host.
 	ListenAddr string
 
-	// ExtraMiddleware is applied around the recorder, outermost first, ahead
-	// of the terminal reverse-proxy handler. This is the seam later phases
-	// (routing, adaptation) hook into; Phase 0 does not use it itself.
+	// ExtraMiddleware is applied inside the recorder, ahead of the terminal
+	// reverse-proxy handler. This is the seam routing hooks into (see
+	// [RoutingMiddleware]) and where adaptation will land.
 	ExtraMiddleware []RawMiddleware
 }
 
@@ -147,9 +151,16 @@ func (s *Server) newReverseProxy(upstream *url.URL) *httputil.ReverseProxy {
 			// altering any header the client didn't send. That is the whole
 			// byte-identical-passthrough contract for headers — see doc 05
 			// §1: any injected field can bust a cache_control breakpoint
-			// downstream of it, and more generally Phase 0 must mutate
-			// nothing.
-			pr.SetURL(upstream)
+			// downstream of it, and more generally an unrouted request must
+			// be mutated in no way at all.
+			target := upstream
+			if b := backendFor(pr.In); b != nil {
+				// A route claimed this request. The routing middleware has
+				// already swapped the credential; all that is left is to
+				// point it at the backend's host.
+				target = b.URL
+			}
+			pr.SetURL(target)
 		},
 		Transport: transport,
 		// Flush after every write, immediately. This is the single most

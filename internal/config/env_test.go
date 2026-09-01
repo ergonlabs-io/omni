@@ -21,7 +21,7 @@ func TestEnvVarNesting(t *testing.T) {
 
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
-		t.Fatalf("Load: %v (issues: %+v)", err, e.Issues)
+		t.Fatalf("Load: %v (issues: %+v)", err, e.Check())
 	}
 	if e.Record.Redact.V != false {
 		t.Errorf("record.redact = %v, want false", e.Record.Redact.V)
@@ -65,13 +65,13 @@ func TestEnvVarInvalidValue(t *testing.T) {
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Path == "all_traffic" && is.Level == LevelError {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError issue for OMNI_ALL_TRAFFIC=not-a-bool, got: %+v", e.Issues)
+		t.Errorf("expected a LevelError issue for OMNI_ALL_TRAFFIC=not-a-bool, got: %+v", e.Check())
 	}
 	// Falls back to the previous value rather than a zero value silently.
 	if e.AllTraffic.V != false || e.AllTraffic.Source != builtinSource {
@@ -79,29 +79,29 @@ func TestEnvVarInvalidValue(t *testing.T) {
 	}
 }
 
-// TestEnvVarModelMapUnsupported checks that model_map (a map-valued field)
+// TestEnvVarRoutesUnsupported checks that routing rules (a list-valued field)
 // cannot be set via environment variables, and that attempting it produces
 // a warning rather than silently doing nothing unexplained.
-func TestEnvVarModelMapUnsupported(t *testing.T) {
+func TestEnvVarRoutesUnsupported(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	t.Setenv("OMNI_AGENTS__CLAUDE__MODEL_MAP__CLAUDE_OPUS_5", "claude-sonnet-5")
+	t.Setenv("OMNI_AGENTS__CLAUDE__ROUTE__CLAUDE_OPUS_5", "claude-sonnet-5")
 
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(e.ModelMap.V) != 0 {
-		t.Errorf("model_map = %v, want empty (env cannot set it)", e.ModelMap.V)
+	if len(e.Routes.V) != 0 {
+		t.Errorf("routes = %v, want empty (env cannot set them)", e.Routes.V)
 	}
 	found := false
-	for _, is := range e.Issues {
-		if is.Level == LevelWarning && strings.Contains(is.Message, "model_map") {
+	for _, is := range e.Check() {
+		if is.Level == LevelWarning && strings.Contains(is.Message, "route") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a warning issue explaining model_map cannot be set via env, got: %+v", e.Issues)
+		t.Errorf("expected a warning issue explaining routes cannot be set via env, got: %+v", e.Check())
 	}
 }
 

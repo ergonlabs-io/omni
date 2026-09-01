@@ -16,7 +16,7 @@ func TestCredentialRejection(t *testing.T) {
 		{"anthropic key in upstream", `upstream = "https://sk-ant-api03-abcdefghijklmnop"`},
 		{"generic sk- key in binary", `binary = "sk-abcdefghijklmnopqrstuvwx"`},
 		{"bearer token in env", "[env]\nFOO = \"Bearer abcdefghijklmnopqrstuvwx\""},
-		{"key as model_map value", "[model_map]\n\"claude-opus-5\" = \"sk-ant-api03-abcdefghijklmnop\""},
+		{"key as route model", "[[route]]\nmatch = \"claude-opus-5\"\nmodel = \"sk-ant-api03-abcdefghijklmnop\""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -26,19 +26,19 @@ func TestCredentialRejection(t *testing.T) {
 
 			e, err := LoadFrom(home, "claude")
 			if err == nil {
-				t.Fatalf("Load: expected error for credential-shaped value, got nil (issues: %+v)", e.Issues)
+				t.Fatalf("Load: expected error for credential-shaped value, got nil (issues: %+v)", e.Check())
 			}
 			if e == nil || !e.HasFatal() {
 				t.Fatalf("expected a Fatal issue recorded even though Load errored; got %+v", e)
 			}
 			foundCred := false
-			for _, is := range e.Issues {
+			for _, is := range e.Check() {
 				if is.Fatal && strings.Contains(is.Message, "credential") {
 					foundCred = true
 				}
 			}
 			if !foundCred {
-				t.Errorf("expected a Fatal credential issue, got: %+v", e.Issues)
+				t.Errorf("expected a Fatal credential issue, got: %+v", e.Check())
 			}
 		})
 	}
@@ -50,15 +50,16 @@ func TestCredentialRejection(t *testing.T) {
 binary = "/Users/me/.local/bin/claude"
 upstream = "https://api.anthropic.com"
 
-[model_map]
-"claude-opus-5" = "claude-sonnet-5"
+[[route]]
+match = "claude-opus-5"
+model = "claude-sonnet-5"
 `)
 		e, err := LoadFrom(home, "claude")
 		if err != nil {
-			t.Fatalf("Load: unexpected error: %v (issues: %+v)", err, e.Issues)
+			t.Fatalf("Load: unexpected error: %v (issues: %+v)", err, e.Check())
 		}
 		if e.HasFatal() {
-			t.Errorf("unexpected Fatal issue on ordinary config: %+v", e.Issues)
+			t.Errorf("unexpected Fatal issue on ordinary config: %+v", e.Check())
 		}
 	})
 }
@@ -107,7 +108,7 @@ listen = "`+addr+`"
 `)
 			e, err := LoadFrom(home, "claude")
 			if err != nil {
-				t.Fatalf("Load: unexpected error for loopback listen %q: %v (issues: %+v)", addr, err, e.Issues)
+				t.Fatalf("Load: unexpected error for loopback listen %q: %v (issues: %+v)", addr, err, e.Check())
 			}
 			if e.Proxy.Listen.V != addr {
 				t.Errorf("proxy.listen = %q, want %q", e.Proxy.Listen.V, addr)
@@ -116,23 +117,24 @@ listen = "`+addr+`"
 	}
 }
 
-// TestModelMapCapability checks that model_map on codex (openai style,
+// TestRoutingCapability checks that routing rules on codex (openai style,
 // cannot rewrite) is flagged as an error naming the limitation, per
 // internal-docs/08-configuration.md's `config check` semantics.
-func TestModelMapCapability(t *testing.T) {
+func TestRoutingCapability(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
 	writeTestFile(t, AgentConfigPath(home, "codex"), `
-[model_map]
-"gpt-5" = "gpt-5-mini"
+[[route]]
+match = "gpt-5"
+model = "gpt-5-mini"
 `)
 	e, err := LoadFrom(home, "codex")
 	if err != nil {
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
-		if is.Path == "model_map" && is.Level == LevelError {
+	for _, is := range e.Check() {
+		if is.Path == "route" && is.Level == LevelError {
 			found = true
 			if !strings.Contains(is.Message, "codex") {
 				t.Errorf("message should name the agent: %q", is.Message)
@@ -140,18 +142,18 @@ func TestModelMapCapability(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError model_map issue for codex, got: %+v", e.Issues)
+		t.Errorf("expected a LevelError route issue for codex, got: %+v", e.Check())
 	}
 	if e.HasFatal() {
-		t.Errorf("model_map capability mismatch should not be Fatal (does not block Load), got: %+v", e.Issues)
+		t.Errorf("routing capability mismatch should not be Fatal (does not block Load), got: %+v", e.Check())
 	}
 
-	if err := e.ModelMapError(false); err == nil {
-		t.Errorf("ModelMapError(false) = nil, want an error naming the limitation")
+	if err := e.RoutingError(false); err == nil {
+		t.Errorf("RoutingError(false) = nil, want an error naming the limitation")
 	} else if !strings.Contains(err.Error(), "codex") {
-		t.Errorf("ModelMapError message = %q, want it to name codex", err.Error())
+		t.Errorf("RoutingError message = %q, want it to name codex", err.Error())
 	}
-	if err := e.ModelMapError(true); err != nil {
-		t.Errorf("ModelMapError(true) = %v, want nil", err)
+	if err := e.RoutingError(true); err != nil {
+		t.Errorf("RoutingError(true) = %v, want nil", err)
 	}
 }

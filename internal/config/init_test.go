@@ -20,8 +20,6 @@ func TestInitCreatesTree(t *testing.T) {
 
 	wantFiles := []string{
 		GlobalConfigPath(home),
-		AgentConfigPath(home, "claude"),
-		AgentConfigPath(home, "codex"),
 	}
 	for _, p := range wantFiles {
 		if _, err := os.Stat(p); err != nil {
@@ -115,9 +113,9 @@ func TestInitBootstrappedConfigLoads(t *testing.T) {
 
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
-		t.Fatalf("LoadFrom after Init: %v (issues: %+v)", err, e.Issues)
+		t.Fatalf("LoadFrom after Init: %v (issues: %+v)", err, e.Check())
 	}
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Level == LevelError {
 			t.Errorf("bootstrapped config has an error-level issue: %s", is)
 		}
@@ -129,8 +127,8 @@ func TestInitBootstrappedConfigLoads(t *testing.T) {
 	if e.Mode.V != ModeRecord {
 		t.Errorf("claude mode = %q, want record (inherited; the generated agents/claude.conf must not override it)", e.Mode.V)
 	}
-	if len(e.ModelMap.V) != 0 {
-		t.Errorf("bootstrapped claude config has a live model_map %v; the generated template must ship none", e.ModelMap.V)
+	if len(e.Routes.V) != 0 {
+		t.Errorf("bootstrapped claude config has live routing rules %v; the generated template must ship none", e.Routes.V)
 	}
 
 	eCodex, err := LoadFrom(home, "codex")

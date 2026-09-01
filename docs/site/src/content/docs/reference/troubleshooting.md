@@ -47,14 +47,15 @@ Exit `64`. The name is not a known agent or alias. Note that
 
 ```
 omni: agent "claude": binary "claude" not found on PATH
-  install claude, or set its path in ~/.omni/agents/claude.conf
+  install claude, or set `binary` under [agents.claude] in ~/.omni/omni.conf
 ```
 
 Exit `69`. omni knows the agent but cannot find its executable. Install it,
 or pin the path:
 
 ```toml
-# ~/.omni/agents/claude.conf
+# ~/.omni/omni.conf
+[agents.claude]
 binary = "/opt/claude/bin/claude"
 ```
 

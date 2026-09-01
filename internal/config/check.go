@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -33,13 +35,20 @@ func looksLikeCredential(s string) bool {
 // runChecks performs the semantic validation that cannot be done purely
 // while decoding one layer: it needs the fully merged value (credential
 // scan, loopback check) or an outside fact (the agent's APIStyle, for the
-// model_map capability check). Called by both Load and Override so a Fatal
+// routing capability check). Called by both Load and Override so a Fatal
 // Issue is caught the moment it becomes true, not only when a caller
 // remembers to invoke Check.
 func runChecks(e *Effective) {
+	// Rebuilt, not appended to: Override calls runChecks a second time on
+	// the same *Effective, and every derived check would otherwise report
+	// its finding once per call.
+	e.checkIssues = nil
 	scanCredentials(e)
 	checkLoopback(e)
-	checkModelMapCapability(e)
+	checkRoutingCapability(e)
+	checkRoutes(e)
+	checkBackendCredentials(e)
+	checkBackendKeys(e)
 }
 
 // scanCredentials rejects any string value in the merged config that looks
@@ -49,7 +58,7 @@ func runChecks(e *Effective) {
 func scanCredentials(e *Effective) {
 	check := func(path, source, val string) {
 		if val != "" && looksLikeCredential(val) {
-			e.Issues = append(e.Issues, Issue{
+			e.checkIssues = append(e.checkIssues, Issue{
 				Path: path,
 				Message: "value looks like a credential (API key or bearer token) — " +
 					"never put credentials in config; they come from the environment " +
@@ -63,13 +72,96 @@ func scanCredentials(e *Effective) {
 	check("binary", e.Binary.Source, e.Binary.V)
 	check("upstream", e.Upstream.Source, e.Upstream.V)
 	check("proxy.listen", e.Proxy.Listen.Source, e.Proxy.Listen.V)
-	for k, v := range e.ModelMap.V {
-		check("model_map."+k, e.ModelMap.Source, k)
-		check("model_map."+k, e.ModelMap.Source, v)
+	for i, r := range e.Routes.V {
+		path := fmt.Sprintf("route[%d]", i)
+		check(path+".match", r.Source, r.Match)
+		check(path+".model", r.Source, r.Model)
 	}
 	for k, v := range e.Env.V {
 		check("env."+k, e.Env.Source, k)
 		check("env."+k, e.Env.Source, v)
+	}
+	for name, b := range e.Backends.V {
+		check("backends."+name+".base_url", b.Source, b.BaseURL)
+		// api_key_env holds a variable *name*, so a credential-shaped value
+		// here means someone pasted the key itself into the wrong field —
+		// exactly the mistake worth catching loudly.
+		check("backends."+name+".api_key_env", b.Source, b.APIKeyEnv)
+		for hk, hv := range b.Headers {
+			check("backends."+name+".headers."+hk, b.Source, hv)
+		}
+	}
+}
+
+// checkRoutes resolves the rule list against the declared backends and
+// records whatever will not resolve: an undeclared backend, a backend whose
+// wire format the agent does not speak, or a rule an earlier rule shadows.
+// Routing is decided before the child launches, so these surface now rather
+// than as a failed request twenty minutes into a session.
+func checkRoutes(e *Effective) {
+	if len(e.Routes.V) == 0 {
+		return
+	}
+	style := ""
+	if p := profile.Lookup(e.Agent); p != nil {
+		style = string(p.APIStyle)
+	}
+	_, issues := e.Resolve(style)
+	e.checkIssues = append(e.checkIssues, issues...)
+}
+
+// checkBackendCredentials rejects a remote backend that names no
+// api_key_env and is not the agent's own upstream. Such a backend would be
+// sent requests with the agent's credential stripped and nothing put in its
+// place — a guaranteed 401, and a config the user plainly did not mean.
+// A loopback backend is exempt: a local inference server wanting no auth is
+// the normal case.
+func checkBackendCredentials(e *Effective) {
+	upstream := ""
+	if p := profile.Lookup(e.Agent); p != nil {
+		upstream = p.Upstream
+	}
+	if e.Upstream.V != "" {
+		upstream = e.Upstream.V
+	}
+	for _, name := range sortedBackendNames(e.Backends.V) {
+		b := e.Backends.V[name]
+		if b.APIKeyEnv != "" || b.Policy(upstream) != AuthNone {
+			continue
+		}
+		if u, err := url.Parse(b.BaseURL); err == nil && isLoopbackAddr(u.Host) {
+			continue
+		}
+		e.checkIssues = append(e.checkIssues, Issue{
+			Path: "backends." + name + ".api_key_env",
+			Message: fmt.Sprintf(
+				"backend %q is remote and names no api_key_env — omni strips the agent's "+
+					"credential before forwarding, so requests would arrive unauthenticated",
+				name,
+			),
+			Source: b.Source,
+			Level:  LevelError,
+		})
+	}
+}
+
+// checkBackendKeys warns about a declared backend whose api_key_env is not
+// set in the environment. A warning, not an error: a backend can be
+// declared and unused, and only a route that actually targets it needs the
+// credential. cmd/omni promotes this to a hard failure when such a route
+// exists — see resolveRouter.
+func checkBackendKeys(e *Effective) {
+	for _, name := range sortedBackendNames(e.Backends.V) {
+		b := e.Backends.V[name]
+		if b.APIKeyEnv == "" || os.Getenv(b.APIKeyEnv) != "" {
+			continue
+		}
+		e.checkIssues = append(e.checkIssues, Issue{
+			Path:    "backends." + name + ".api_key_env",
+			Message: fmt.Sprintf("$%s is not set in the environment; routes to backend %q will fail", b.APIKeyEnv, name),
+			Source:  b.Source,
+			Level:   LevelWarning,
+		})
 	}
 }
 
@@ -81,7 +173,7 @@ func checkLoopback(e *Effective) {
 	if isLoopbackAddr(addr) {
 		return
 	}
-	e.Issues = append(e.Issues, Issue{
+	e.checkIssues = append(e.checkIssues, Issue{
 		Path: "proxy.listen",
 		Message: fmt.Sprintf(
 			"proxy.listen %q is not loopback — must bind 127.0.0.1, ::1, or localhost; "+
@@ -110,26 +202,26 @@ func isLoopbackAddr(addr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// checkModelMapCapability errors (LevelError, not Fatal — this does not
+// checkRoutingCapability errors (LevelError, not Fatal — this does not
 // stop Load, matching the doc's placement of this rule under `config
 // check`'s semantic validation rather than under §Security's "reject at
-// load" items) when model_map is set for an agent whose wire style cannot
-// be rewritten. See profile.APIStyle.CanRewrite.
-func checkModelMapCapability(e *Effective) {
-	if len(e.ModelMap.V) == 0 {
+// load" items) when routing rules are set for an agent whose wire style
+// cannot be rewritten. See profile.APIStyle.CanRewrite.
+func checkRoutingCapability(e *Effective) {
+	if len(e.Routes.V) == 0 {
 		return
 	}
 	p := profile.Lookup(e.Agent)
 	if p == nil || p.APIStyle.CanRewrite() {
 		return
 	}
-	e.Issues = append(e.Issues, Issue{
-		Path: "model_map",
+	e.checkIssues = append(e.checkIssues, Issue{
+		Path: "route",
 		Message: fmt.Sprintf(
-			"cannot apply model_map for agent %q: model rewriting is not supported for its API style (%s) — sessions are recorded but not rewritten",
+			"cannot apply routing rules for agent %q: model rewriting is not supported for its API style (%s) — sessions are recorded but not rewritten",
 			e.Agent, p.APIStyle,
 		),
-		Source: e.ModelMap.Source,
+		Source: e.Routes.Source,
 		Level:  LevelError,
 	})
 }
@@ -140,5 +232,5 @@ func checkModelMapCapability(e *Effective) {
 // each layer — plus the checks above. This is what `omni config check`
 // prints; a nonzero exit corresponds to any Issue at LevelError.
 func (e *Effective) Check() []Issue {
-	return e.Issues
+	return e.allIssues()
 }

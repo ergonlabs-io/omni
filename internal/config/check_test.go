@@ -48,7 +48,7 @@ mdoe = "route"
 		t.Fatalf("Load: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Level == LevelError && strings.Contains(is.Message, "mdoe") {
 			found = true
 			if !strings.Contains(is.Message, "mode") {
@@ -57,7 +57,7 @@ mdoe = "route"
 		}
 	}
 	if !found {
-		t.Errorf("expected an unknown-key issue for typo'd 'mdoe', got: %+v", e.Issues)
+		t.Errorf("expected an unknown-key issue for typo'd 'mdoe', got: %+v", e.Check())
 	}
 }
 
@@ -72,13 +72,13 @@ bianry = "/usr/bin/claude"
 		t.Fatalf("Load: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Level == LevelError && strings.Contains(is.Message, "bianry") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected an unknown-key issue for 'bianry', got: %+v", e.Issues)
+		t.Errorf("expected an unknown-key issue for 'bianry', got: %+v", e.Check())
 	}
 	if e.Binary.V != "" {
 		t.Errorf("binary should not have been set from an unknown key, got %q", e.Binary.V)
@@ -97,13 +97,13 @@ retention = "not-a-duration"
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Path == "record.retention" && is.Level == LevelError {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError issue for a bad duration, got: %+v", e.Issues)
+		t.Errorf("expected a LevelError issue for a bad duration, got: %+v", e.Check())
 	}
 	// Falls back to the built-in default rather than a zero duration.
 	if e.Record.Retention.Source != builtinSource {
@@ -117,8 +117,9 @@ func TestShowFormatsProvenance(t *testing.T) {
 	writeTestFile(t, AgentConfigPath(home, "claude"), `
 mode = "route"
 
-[model_map]
-"claude-opus-5" = "claude-sonnet-5"
+[[route]]
+match = "claude-opus-5"
+model = "claude-sonnet-5"
 `)
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
@@ -135,6 +136,6 @@ mode = "route"
 		t.Errorf("Show() missing built-in default provenance for untouched keys:\n%s", out)
 	}
 	if !strings.Contains(out, "claude-opus-5 → claude-sonnet-5") {
-		t.Errorf("Show() missing model_map arrow formatting:\n%s", out)
+		t.Errorf("Show() missing route arrow formatting:\n%s", out)
 	}
 }

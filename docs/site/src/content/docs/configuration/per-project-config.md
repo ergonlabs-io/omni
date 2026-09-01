@@ -18,8 +18,9 @@ its root:
 # ./.omni.conf — checked into the repo
 mode = "route"
 
-[model_map]
-"claude-opus-5" = "claude-sonnet-5"
+[[route]]
+match = "claude-opus-*"
+model = "claude-sonnet-5"
 
 [record]
 bodies = false
@@ -36,7 +37,7 @@ A project file may set exactly three things:
 | Key | Effect |
 |---|---|
 | `mode` | `off`, `record`, or `route` for work in this repo. |
-| `model_map` | Model rewrites, including nested keys under it. |
+| `route` | Routing rules — but only ones that rename a model. |
 | `record.bodies` | Whether request and response bodies are captured. |
 
 Everything else in the file is **ignored and reported as a warning**, by
@@ -44,7 +45,7 @@ name, with the file and line that set it:
 
 ```
 omni: binary: "binary" is not permitted in project config
-  (./.omni.conf may only set mode, model_map, record.bodies) — ignored
+  (./.omni.conf may only set mode, route, record.bodies) — ignored
   (./.omni.conf:4)
 ```
 
@@ -95,3 +96,19 @@ omni config show           # each effective value, and the layer that set it
 
 `config show` labels a value that came from this layer with the file and
 line, so a surprising setting resolves in one command.
+
+## A project may rename, but not reroute
+
+A `[[route]]` rule here may set `model`, but never `backend`:
+
+```
+omni: route: project config may not route to a backend ("openrouter")
+  — ./.omni.conf can rename a model but not change its destination;
+  move this to ~/.omni/omni.conf if you meant it (./.omni.conf:3)
+```
+
+Renaming a model within the agent's own provider is a local preference a
+repository can reasonably express. Choosing which third party receives your
+prompts, and bills you for them, is not — and the backend it named would be
+one *you* declared globally, which makes the escalation quiet rather than
+obvious. A project file cannot declare a `[backends.*]` table either.

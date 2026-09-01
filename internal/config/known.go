@@ -20,8 +20,9 @@ var knownDefaultsPaths = map[string]bool{
 
 // knownAgentPaths are the recognized dotted keys for an agent-shaped config:
 // either omni.conf's [agents.<name>] table or an
-// ~/.omni/agents/<name>.conf drop-in. model_map and env are wildcards —
-// anything nested underneath is a user-chosen key, not a schema key.
+// ~/.omni/agents/<name>.conf drop-in. route and env are wildcards — a
+// [[route]] element's keys are validated separately (knownRoutePaths), and
+// anything nested under env is a user-chosen variable name, not schema.
 var knownAgentPaths = map[string]bool{
 	"mode":                     true,
 	"binary":                   true,
@@ -34,7 +35,7 @@ var knownAgentPaths = map[string]bool{
 	"record.retention":         true,
 }
 
-var knownAgentWildcards = []string{"model_map", "env"}
+var knownAgentWildcards = []string{"route", "env"}
 
 // projectAllowedPaths is the SECURITY-CRITICAL allowlist for ./.omni.conf
 // (project, repo-local config). Anything not covered here is rejected with
@@ -46,7 +47,7 @@ func projectAllowedPath(path string) bool {
 	switch {
 	case path == "mode":
 		return true
-	case path == "model_map" || strings.HasPrefix(path, "model_map."):
+	case path == "route" || strings.HasPrefix(path, "route."):
 		return true
 	case path == "record.bodies":
 		return true
@@ -57,8 +58,8 @@ func projectAllowedPath(path string) bool {
 
 // knownPath reports whether dotted path p is recognized against exact,
 // treating any path under one of wildcards as recognized too (used for
-// model_map.* and env.*, whose right-hand sides are user-defined keys, not
-// schema).
+// route.* and env.*, whose leaves are validated elsewhere or are
+// user-defined keys rather than schema).
 func knownPath(p string, exact map[string]bool, wildcards []string) bool {
 	if exact[p] {
 		return true

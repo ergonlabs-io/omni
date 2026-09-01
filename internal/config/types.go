@@ -10,7 +10,7 @@ const (
 	ModeOff Mode = "off"
 	// ModeRecord captures all traffic to ~/.omni/sessions. Default.
 	ModeRecord Mode = "record"
-	// ModeRoute records and additionally applies model_map and the
+	// ModeRoute records and additionally applies the routing rules and the
 	// capability adapter.
 	ModeRoute Mode = "route"
 )
@@ -99,15 +99,36 @@ type Effective struct {
 	Adapt  AdaptEffective
 	Proxy  ProxyEffective
 
-	// ModelMap rewrites model names on the wire: keys are what the agent
-	// sends, values are what omni forwards.
-	ModelMap Value[map[string]string]
+	// Routes is the ordered routing rule list, first match wins. Per-agent.
+	// See Resolve to pair it with Backends.
+	Routes Value[[]Rule]
+	// Backends are the declared destinations a rule can target, keyed by
+	// name. Global config only.
+	Backends Value[map[string]Backend]
 	// Env is extra environment injected into the child process.
 	Env Value[map[string]string]
 
-	// Issues accumulates every problem found while loading and validating
-	// this configuration, across all layers. See Check.
+	// Issues accumulates the problems found while *merging* layers: unknown
+	// keys, bad enums, unparsable durations. Each is discovered once, when
+	// the layer that caused it is read.
 	Issues []Issue
+
+	// checkIssues holds the problems derived from the fully merged state
+	// (credential scan, loopback, route resolution). Unlike Issues these
+	// are recomputed from scratch every time runChecks runs — Override
+	// re-runs it, and a check that appended would report the same problem
+	// once per invocation. See allIssues.
+	checkIssues []Issue
+}
+
+// allIssues returns the merge-time and derived problems as one slice.
+func (e *Effective) allIssues() []Issue {
+	if len(e.checkIssues) == 0 {
+		return e.Issues
+	}
+	out := make([]Issue, 0, len(e.Issues)+len(e.checkIssues))
+	out = append(out, e.Issues...)
+	return append(out, e.checkIssues...)
 }
 
 // RecordEffective is the resolved [record] section.
@@ -136,7 +157,7 @@ type ProxyEffective struct {
 // Load-time hard-stop categories (non-loopback proxy.listen, a
 // credential-shaped value anywhere in config).
 func (e *Effective) HasFatal() bool {
-	for _, is := range e.Issues {
+	for _, is := range e.allIssues() {
 		if is.Fatal {
 			return true
 		}
@@ -147,7 +168,7 @@ func (e *Effective) HasFatal() bool {
 // HasErrors reports whether any accumulated Issue is at LevelError. Used by
 // `omni config check` to decide its exit code.
 func (e *Effective) HasErrors() bool {
-	for _, is := range e.Issues {
+	for _, is := range e.allIssues() {
 		if is.Level == LevelError {
 			return true
 		}
@@ -155,17 +176,17 @@ func (e *Effective) HasErrors() bool {
 	return false
 }
 
-// ModelMapError returns a descriptive error if ModelMap is set but the
+// RoutingError returns a descriptive error if routing rules are set but the
 // agent's wire style cannot be rewritten (see profile.APIStyle.CanRewrite),
 // or nil otherwise. Callers (cmd/omni) can use this to fail a `route`
-// launch loudly rather than silently no-op the map, matching
+// launch loudly rather than silently no-op the rules, matching
 // internal-docs/09-cli-design.md's example error.
-func (e *Effective) ModelMapError(canRewrite bool) error {
-	if canRewrite || len(e.ModelMap.V) == 0 {
+func (e *Effective) RoutingError(canRewrite bool) error {
+	if canRewrite || len(e.Routes.V) == 0 {
 		return nil
 	}
 	return fmt.Errorf(
-		"cannot apply model_map for agent %q: model rewriting is not supported for this agent's API style (%s)",
-		e.Agent, e.ModelMap.Source,
+		"cannot apply routing rules for agent %q: model rewriting is not supported for this agent's API style (%s)",
+		e.Agent, e.Routes.Source,
 	)
 }

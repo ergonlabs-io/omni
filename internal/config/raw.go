@@ -8,8 +8,9 @@ package config
 
 // rawGlobal mirrors the top level of ~/.omni/omni.conf.
 type rawGlobal struct {
-	Defaults rawDefaults         `toml:"defaults"`
-	Agents   map[string]rawAgent `toml:"agents"`
+	Defaults rawDefaults           `toml:"defaults"`
+	Agents   map[string]rawAgent   `toml:"agents"`
+	Backends map[string]rawBackend `toml:"backends"`
 }
 
 // rawDefaults mirrors omni.conf's [defaults] table plus its subtables.
@@ -46,10 +47,10 @@ type rawProxy struct {
 // the shape of a drop-in ~/.omni/agents/<name>.conf file (which is the same
 // fields at the top level, without an [agents.<name>] wrapper).
 type rawAgent struct {
-	Mode     *string           `toml:"mode"`
-	Binary   *string           `toml:"binary"`
-	Upstream *string           `toml:"upstream"`
-	ModelMap map[string]string `toml:"model_map"`
+	Mode     *string    `toml:"mode"`
+	Binary   *string    `toml:"binary"`
+	Upstream *string    `toml:"upstream"`
+	Route    []rawRoute `toml:"route"`
 
 	Adapt  rawAdapt          `toml:"adapt"`
 	Record rawRecord         `toml:"record"`

@@ -34,7 +34,7 @@ The **Scope** column says where a key may be set:
 
 - `off` — forward only; nothing is recorded.
 - `record` — capture every exchange to `~/.omni/sessions`.
-- `route` — record, and apply `model_map` and the capability adapter.
+- `route` — record, and apply the `[[route]]` rules and the capability adapter.
 
 ## `[record]`
 
@@ -68,25 +68,79 @@ Global only — one omni process has one proxy.
 accepted; a bare `:8080`, a LAN address, or a hostname that cannot be
 positively identified as loopback is refused at load.
 
-## `[model_map]` and `[env]`
+## `[backends.<name>]`
 
-Both are tables of user-chosen keys, so neither can be set from the
-environment.
+Global only. A backend is a destination a routing rule can target.
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `base_url` | string | required | `https`, or `http` on loopback only. |
+| `api_key_env` | string | — | Name of the env var holding the credential. |
+| `api_style` | `anthropic` \| `openai` | `anthropic` | Must match the agent's. |
+| `model` | string | — | What to ask this backend for, absent a rule's own. |
+| `headers` | table | — | Extra headers on every request to this backend. |
 
 ```toml
-[model_map]
-# what the agent sends = what omni forwards
-"claude-opus-5" = "claude-sonnet-5"
+[backends.openrouter]
+base_url    = "https://openrouter.ai/api"
+api_key_env = "OPENROUTER_API_KEY"
+api_style   = "anthropic"
+model       = "minimax/minimax-m3:free"
 
+[backends.openrouter.headers]
+X-Title = "omni"
+```
+
+`api_key_env` names a variable; it is never the key itself, and a
+credential-shaped value anywhere in config is refused at load. It may be
+omitted only for a loopback endpoint, or for a backend that resolves to the
+agent's own upstream — a remote backend with no credential is an error,
+because omni strips the agent's own before forwarding.
+
+## `[[route]]`
+
+An ordered list of rules, first match wins, belonging to an agent. Not
+settable from the environment.
+
+| Key | Type | Notes |
+|---|---|---|
+| `match` | string | Required. Glob against the model the agent asked for. |
+| `backend` | string | A declared backend, or omit to keep the agent's upstream. |
+| `model` | string | Replaces the model. Omit to use the backend's, or leave it unchanged. |
+
+```toml
+[[agents.claude.route]]
+match   = "claude-haiku-4-5*"
+backend = "openrouter"
+
+[[agents.claude.route]]
+match = "claude-opus-*"
+model = "claude-sonnet-5"
+```
+
+Glob syntax is `*` (any run, including `/` and `:`) and `?` (one character);
+everything else is literal. A rule must set `backend`, `model`, or both.
+
+In a `~/.omni/agents/<name>.conf` drop-in these are written `[[route]]`,
+unwrapped. A layer declaring any rules **replaces** the list rather than
+appending — rules are ordered, and there is no predictable order between two
+files' lists.
+
+A project `./.omni.conf` may write rules, but only ones that rename a model;
+a rule naming a `backend` is rejected.
+
+## `[env]`
+
+A table of user-chosen keys, so it cannot be set from the environment.
+
+```toml
 [env]
 # extra environment for the child process
 ANTHROPIC_LOG = "debug"
 ```
 
-Both belong to an agent, not to `[defaults]`: put them in
-`[agents.<name>]` or in `~/.omni/agents/<name>.conf`. `model_map` may also be
-set per project; `env` may not, and never overrides omni's own steering
-variables.
+`env` belongs to an agent, not to `[defaults]`. It may not be set per
+project, and never overrides omni's own steering variables.
 
 ## What is applied today
 
@@ -95,13 +149,13 @@ by `omni config show`. Not all of it is acted on yet.
 
 | Key | Status |
 |---|---|
-| `mode` | Applied. `off` disables recording; `route` currently behaves as `record`. |
+| `mode` | Applied. `off` disables recording; `route` applies the rules. |
 | `binary`, `upstream` | Applied. |
 | `record.enabled`, `record.redact` | Applied. |
 | `proxy.listen` | Applied, and enforced. |
 | `env` | Applied. |
 | `all_traffic` | Validated per agent; no CA is generated yet, so it has no effect. |
-| `model_map` | Validated; the rewrite is not implemented. |
+| `route`, `backends.*` | Applied. |
 | `record.bodies` | Not applied — bodies are always captured. |
 | `record.retention` | Not applied — sessions are not pruned automatically. |
 | `adapt.*` | Not applied — there is no adapter yet. |
@@ -119,7 +173,7 @@ them, rather than warning and continuing.
   place for secrets, and one written there tends to end up in a repository.
 
 Everything else — an unknown key, a bad duration, an invalid enum, a
-disallowed project key, a `model_map` on an agent that cannot be rewritten —
+disallowed project key, a `[[route]]` on an agent that cannot be rewritten —
 is collected and reported. Errors fail `omni config check` and abort a launch
 before the agent starts; warnings do not.
 

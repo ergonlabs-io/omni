@@ -40,7 +40,8 @@ func builtinDefaults(agent string) *Effective {
 	e.Proxy.Listen = Value[string]{"127.0.0.1:0", builtinSource}
 	e.Proxy.IdleTimeout = Value[Duration]{Duration(mustParseDuration("10m")), builtinSource}
 
-	e.ModelMap = Value[map[string]string]{map[string]string{}, builtinSource}
+	e.Routes = Value[[]Rule]{nil, builtinSource}
+	e.Backends = Value[map[string]Backend]{map[string]Backend{}, builtinSource}
 	e.Env = Value[map[string]string]{map[string]string{}, builtinSource}
 
 	return e
