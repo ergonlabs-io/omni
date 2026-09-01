@@ -1,0 +1,60 @@
+# Every gate the release workflow runs, run on the way in instead of at tag
+# time. A tag push should never be the first time `make check` has seen Linux.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is where this is developed; Linux is where most users run it.
+        # The PTY and signal handling in internal/launcher differ enough
+        # between the two to be worth both.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: make check
+      - run: make test-race
+      - run: make smoke
+
+      # Cross-compilation is part of the release contract, so it is worth
+      # knowing it broke before tagging rather than during.
+      - name: Cross-compile all release platforms
+        if: matrix.os == 'ubuntu-latest'
+        run: make dist VERSION=v0.0.0-ci
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+
+      - run: npm ci
+        working-directory: docs/site
+
+      # `make docs-build` deliberately does not install dependencies.
+      - run: make docs-build

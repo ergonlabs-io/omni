@@ -8,10 +8,14 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%d)
 
+# Tags carry the v; the version omni reports and the release filenames do not.
+# `omni --version` is something people parse, so it prints 0.1.0, not v0.1.0.
+DIST_VERSION := $(patsubst v%,%,$(VERSION))
+
 # A version string without a commit is useless for bug reports.
 # See internal-docs/09-cli-design.md §7.
 LDFLAGS := -s -w \
-	-X main.version=$(VERSION) \
+	-X main.version=$(DIST_VERSION) \
 	-X main.commit=$(COMMIT) \
 	-X main.date=$(DATE)
 
@@ -61,8 +65,7 @@ install: build
 # Release artifacts. install.sh downloads exactly these names, so the two
 # must change together: omni_<version>_<os>_<arch>.tar.gz containing a bare
 # `omni`, plus a checksums.txt the installer verifies against.
-DIST_VERSION := $(patsubst v%,%,$(VERSION))
-PLATFORMS    := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
+PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 
 dist:
 	rm -rf dist

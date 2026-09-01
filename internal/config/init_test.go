@@ -122,8 +122,15 @@ func TestInitBootstrappedConfigLoads(t *testing.T) {
 			t.Errorf("bootstrapped config has an error-level issue: %s", is)
 		}
 	}
-	if e.Mode.V != ModeRoute {
-		t.Errorf("claude mode = %q, want route (per the generated agents/claude.conf template)", e.Mode.V)
+	// The generated agents/claude.conf overrides nothing: a fresh install
+	// must not change how the agent behaves, and `omni init` never rewrites
+	// this file once it exists, so anything active here is permanent for
+	// that user.
+	if e.Mode.V != ModeRecord {
+		t.Errorf("claude mode = %q, want record (inherited; the generated agents/claude.conf must not override it)", e.Mode.V)
+	}
+	if len(e.ModelMap.V) != 0 {
+		t.Errorf("bootstrapped claude config has a live model_map %v; the generated template must ship none", e.ModelMap.V)
 	}
 
 	eCodex, err := LoadFrom(home, "codex")

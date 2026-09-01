@@ -9,7 +9,9 @@
 #   route   record + apply model_map and the capability adapter
 mode = "record"
 
-# Tier 2 full MITM. Requires a CA and per-runtime trust. See docs/03.
+# Tier 2 full MITM: intercept every TLS connection the agent makes, not just
+# its LLM calls. Requires a locally generated CA that the agent's runtime
+# trusts. Not implemented yet.
 all_traffic = false
 
 [defaults.record]
@@ -20,7 +22,8 @@ retention = "14d"     # prune sessions older than this on startup
 
 [defaults.adapt]
 # What to do when the source request uses a feature the target model cannot
-# express. "error" is the default and the safe choice — see docs/04.
+# express. "error" is the default and the safe choice: silently dropping a
+# thinking budget or a tool definition changes what the model does.
 on_unrepresentable = "error"   # error | warn
 report_changes     = true      # log every mutation the adapter makes
 
