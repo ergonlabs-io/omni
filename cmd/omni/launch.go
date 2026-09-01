@@ -88,12 +88,7 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 	}
 
 	// Tier 2 is not implemented yet; no CA path is injected.
-	env := append(os.Environ(), p.Env(srv.URL(), "")...)
-	for k, v := range eff.Env.V {
-		env = append(env, k+"="+v)
-	}
-	// omni's own steering vars go last so they always win over user [env].
-	env = append(env, p.Env(srv.URL(), "")...)
+	env := childEnv(os.Environ(), eff.Env.V, p.Env(srv.URL(), ""))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -114,6 +109,23 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 		return exitSoftware
 	}
 	return res.ExitCode
+}
+
+// childEnv builds the environment for the agent process: the inherited
+// environment, then the user's [env] additions, then omni's steering vars.
+//
+// The order is the mechanism, not a style choice. os/exec resolves a
+// duplicate key to its last occurrence, so appending the steering vars last
+// is the only thing keeping a user [env] entry from pointing the agent at
+// something other than the proxy — which would not fail loudly, it would
+// quietly produce a session omni believes it is intercepting and is not.
+func childEnv(base []string, userEnv map[string]string, steering []string) []string {
+	env := make([]string, 0, len(base)+len(userEnv)+len(steering))
+	env = append(env, base...)
+	for k, v := range userEnv {
+		env = append(env, k+"="+v)
+	}
+	return append(env, steering...)
 }
 
 // dryRun prints what would happen without launching anything.
