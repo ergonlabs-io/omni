@@ -22,10 +22,11 @@ import (
 // documented "~/.omni is 0700" guarantee looking satisfied. It is satisfied
 // for a home omni created; this covers one it did not.
 //
-// The check is deliberately narrow: three directories whose contents or
-// listing are sensitive, and only the group/other bits. Session files
-// themselves are written 0700/0600 by internal/record and are not
-// re-checked here.
+// The check is deliberately narrow: the two directories omni creates whose
+// contents or listing are sensitive, and only the group/other bits. Session
+// files themselves are written 0700/0600 by internal/record and are not
+// re-checked here. When Tier 2 lands and starts creating ca/, it sets its
+// own mode and belongs in this list.
 //
 // These are warnings, never errors. A loose home is worth telling someone
 // about; it is not a reason to refuse to launch their agent. Returns nil
@@ -37,7 +38,6 @@ func PermissionWarnings(home string) []string {
 		why  string
 	}{
 		{home, "recorded sessions, and everything else omni keeps, live here"},
-		{filepath.Join(home, "ca"), "this will hold the CA private key"},
 		{filepath.Join(home, "sessions"), "session names reveal when you ran which agent"},
 	} {
 		fi, err := os.Stat(d.path)

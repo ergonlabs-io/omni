@@ -72,14 +72,15 @@ together.
 ~/.omni/                   0700
 ├── omni.conf              everything: defaults, backends, per-agent
 ├── profiles.d/            your own agent profiles
-├── ca/                    0700; the CA is generated lazily, not here
-├── cache/
 └── sessions/              0700; recorded sessions, files inside 0600
 ```
 
-Recorded sessions can contain source code and credentials, so `~/.omni`,
-`ca/` and `sessions/` are created `0700`, explicitly rather than left to your
-umask.
+That is the whole tree. omni does not scaffold directories for features it
+does not have yet — `ca/`, for the Tier 2 certificate authority, appears
+when a CA is first generated.
+
+Recorded sessions can contain source code and credentials, so `~/.omni` and
+`sessions/` are created `0700`, explicitly rather than left to your umask.
 
 `omni init` will **not** change the permissions of a directory that already
 existed — if you created `~/.omni` yourself, or pointed `OMNI_HOME` at an
