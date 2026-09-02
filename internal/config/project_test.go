@@ -10,38 +10,32 @@ import (
 // TestProjectConfigAllowlist is the single most important test in this
 // package: ./.omni.conf is untrusted input (you `cd` into repos you did
 // not write), and internal-docs/08-configuration.md is explicit that it
-// must be restricted to mode, model_map, and record.bodies — and must NOT
-// be able to set binary, upstream, all_traffic, record.redact, or
-// proxy.listen. `binary` in particular would be arbitrary code execution on
-// cd if this allowlist had a hole in it.
+// must be restricted to mode and route — and must NOT be able to set
+// binary, upstream, or redact. `binary` in particular would be arbitrary
+// code execution on cd if this allowlist had a hole in it.
 func TestProjectConfigAllowlist(t *testing.T) {
 	t.Run("allowed keys apply", func(t *testing.T) {
 		home := testHome(t)
 		testCWD(t)
 		writeTestFile(t, ProjectConfigName, `
-mode = "route"
+mode = "off"
 
-[model_map]
-"claude-opus-5" = "claude-sonnet-5"
-
-[record]
-bodies = false
+[[route]]
+match = "claude-opus-5"
+model = "claude-sonnet-5"
 `)
 		e, err := LoadFrom(home, "claude")
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if e.Mode.V != ModeRoute {
-			t.Errorf("mode = %q, want route", e.Mode.V)
+		if e.Mode.V != ModeOff {
+			t.Errorf("mode = %q, want off", e.Mode.V)
 		}
 		if !strings.Contains(e.Mode.Source, ProjectConfigName) {
 			t.Errorf("mode source = %q, want %s", e.Mode.Source, ProjectConfigName)
 		}
-		if got := e.ModelMap.V["claude-opus-5"]; got != "claude-sonnet-5" {
-			t.Errorf("model_map[claude-opus-5] = %q, want claude-sonnet-5", got)
-		}
-		if e.Record.Bodies.V != false {
-			t.Errorf("record.bodies = %v, want false", e.Record.Bodies.V)
+		if len(e.Routes.V) != 1 || e.Routes.V[0].Model != "claude-sonnet-5" {
+			t.Errorf("routes = %+v, want the rename honored", e.Routes.V)
 		}
 	})
 
@@ -66,25 +60,13 @@ bodies = false
 				},
 			},
 			{
-				name: "all_traffic",
-				toml: `all_traffic = true`,
+				// Redaction is the one remaining [defaults] key a hostile
+				// repo would most want to switch off: it would put the
+				// agent's own credentials into the session transcript.
+				name: "redact",
+				toml: `redact = false`,
 				checkNot: func(e *Effective) (string, bool) {
-					return "all_traffic", e.AllTraffic.V == true
-				},
-			},
-			{
-				name: "record.redact",
-				toml: "[record]\nredact = false",
-				checkNot: func(e *Effective) (string, bool) {
-					return "record.redact", e.Record.Redact.V == false
-				},
-			},
-			{
-				name: "proxy.listen",
-				toml: `[proxy]
-listen = "0.0.0.0:9999"`,
-				checkNot: func(e *Effective) (string, bool) {
-					return "proxy.listen", e.Proxy.Listen.V == "0.0.0.0:9999"
+					return "redact", e.Redact.V == false
 				},
 			},
 		}
@@ -107,14 +89,14 @@ listen = "0.0.0.0:9999"`,
 				// A warning must be recorded so the user can see it was
 				// dropped, per "ignore anything else with a warning".
 				found := false
-				for _, is := range e.Issues {
+				for _, is := range e.Check() {
 					if strings.Contains(is.Message, "not permitted in project config") &&
 						is.Level == LevelWarning {
 						found = true
 					}
 				}
 				if !found {
-					t.Errorf("expected a LevelWarning issue about a disallowed project-config key, got: %+v", e.Issues)
+					t.Errorf("expected a LevelWarning issue about a disallowed project-config key, got: %+v", e.Check())
 				}
 			})
 		}

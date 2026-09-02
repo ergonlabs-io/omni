@@ -39,12 +39,6 @@ func GlobalConfigPath(home string) string {
 	return filepath.Join(home, "omni.conf")
 }
 
-// AgentConfigPath returns the path to the per-agent drop-in config for
-// agent under home.
-func AgentConfigPath(home, agent string) string {
-	return filepath.Join(home, "agents", agent+".conf")
-}
-
 // ProjectConfigName is the filename of the per-project, repo-local config.
 // It is read from the current working directory only — never from parent
 // directories. See internal-docs/08-configuration.md §Precedence.

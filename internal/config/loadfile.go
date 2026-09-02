@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -61,13 +63,22 @@ func flattenLeaves(prefix string, v interface{}, out map[string]interface{}) {
 	out[prefix] = v
 }
 
+// sortedLeaves returns the dotted paths in out (as filled by
+// flattenLeaves) in a stable order. Every caller that turns leaves into
+// Issues goes through this: ranging a map directly would order `omni config
+// check`'s output by Go's randomized map iteration, which makes the command
+// useless to diff between runs or in CI.
+func sortedLeaves(out map[string]interface{}) []string {
+	return slices.Sorted(maps.Keys(out))
+}
+
 // unknownKeyIssue builds a LevelError Issue for a config key not present in
 // known, with a Levenshtein-based "did you mean" suggestion. fullPath is
 // used for display; localPath is the (possibly shorter, un-prefixed) form
 // compared against known's keys.
 func unknownKeyIssue(fullPath, localPath, source string, known map[string]bool) Issue {
 	msg := fmt.Sprintf("unknown config key %q", fullPath)
-	if s := suggest(localPath, known); len(s) > 0 {
+	if s := suggestNear(localPath, known); len(s) > 0 {
 		msg += fmt.Sprintf(" (did you mean: %s?)", strings.Join(s, ", "))
 	}
 	return Issue{Path: fullPath, Message: msg, Source: source, Level: LevelError}
@@ -82,4 +93,26 @@ func typeIssue(path, want string, got interface{}, source string) Issue {
 		Source:  source,
 		Level:   LevelError,
 	}
+}
+
+// checkRouteKeys validates the keys inside each element of a [[route]]
+// array. flattenLeaves stops at the array — it only descends into tables —
+// so a rule's own keys would otherwise never be checked, and a typo'd
+// `backends = "openrouter"` would be silently dropped rather than reported.
+func checkRouteKeys(v interface{}, fullPath, source string) []Issue {
+	elems, ok := routeElements(v)
+	if !ok {
+		return []Issue{typeIssue(fullPath, "array of tables", v, source)}
+	}
+	var issues []Issue
+	for i, el := range elems {
+		for k := range el {
+			if knownRoutePaths[k] {
+				continue
+			}
+			p := fmt.Sprintf("%s[%d].%s", fullPath, i, k)
+			issues = append(issues, unknownKeyIssue(p, k, source, knownRoutePaths))
+		}
+	}
+	return issues
 }

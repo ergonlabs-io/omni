@@ -1,6 +1,11 @@
 package config
 
-import "github.com/BurntSushi/toml"
+import (
+	"maps"
+	"slices"
+
+	"github.com/BurntSushi/toml"
+)
 
 // loadGlobal reads and validates ~/.omni/omni.conf. A missing file is not
 // an error — callers check os.IsNotExist and treat the layer as absent.
@@ -22,13 +27,15 @@ func loadGlobal(path string) (rawGlobal, *fileLoad, error) {
 }
 
 // checkGlobalKeys validates every key present in omni.conf: top level must
-// be "defaults" or "agents"; under [defaults], keys must be in
+// be "defaults", "agents", or "backends"; under [defaults], keys must be in
 // knownDefaultsPaths; under [agents.<name>], keys must be in
 // knownAgentPaths (agent names themselves are user-chosen and unrestricted
-// here — profiles.d can register arbitrary agents).
+// here — profiles.d can register arbitrary agents); under
+// [backends.<name>], keys must be in knownBackendPaths.
 func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 	var issues []Issue
-	for topKey, topVal := range generic {
+	for _, topKey := range slices.Sorted(maps.Keys(generic)) {
+		topVal := generic[topKey]
 		switch topKey {
 		case "defaults":
 			sub, ok := topVal.(map[string]interface{})
@@ -37,7 +44,7 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 			}
 			leaves := map[string]interface{}{}
 			flattenLeaves("", sub, leaves)
-			for p := range leaves {
+			for _, p := range sortedLeaves(leaves) {
 				if !knownPath(p, knownDefaultsPaths, nil) {
 					full := "defaults." + p
 					issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownDefaultsPaths))
@@ -48,50 +55,50 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 			if !ok {
 				continue
 			}
-			for agentName, agentVal := range agentsMap {
+			for _, agentName := range slices.Sorted(maps.Keys(agentsMap)) {
+				agentVal := agentsMap[agentName]
 				sub, ok := agentVal.(map[string]interface{})
 				if !ok {
 					continue
 				}
 				leaves := map[string]interface{}{}
 				flattenLeaves("", sub, leaves)
-				for p := range leaves {
+				for _, p := range sortedLeaves(leaves) {
+					v := leaves[p]
+					full := "agents." + agentName + "." + p
+					if p == "route" {
+						issues = append(issues, checkRouteKeys(v, full, fl.src(full))...)
+						continue
+					}
 					if !knownPath(p, knownAgentPaths, knownAgentWildcards) {
-						full := "agents." + agentName + "." + p
 						issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownAgentPaths))
+					}
+				}
+			}
+		case "backends":
+			backendsMap, ok := topVal.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for _, backendName := range slices.Sorted(maps.Keys(backendsMap)) {
+				backendVal := backendsMap[backendName]
+				sub, ok := backendVal.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				leaves := map[string]interface{}{}
+				flattenLeaves("", sub, leaves)
+				for _, p := range sortedLeaves(leaves) {
+					if !knownPath(p, knownBackendPaths, knownBackendWildcards) {
+						full := "backends." + backendName + "." + p
+						issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownBackendPaths))
 					}
 				}
 			}
 		default:
 			issues = append(issues, unknownKeyIssue(topKey, topKey, fl.src(topKey),
-				map[string]bool{"defaults": true, "agents": true}))
+				map[string]bool{"defaults": true, "agents": true, "backends": true}))
 		}
 	}
 	return issues
-}
-
-// loadAgentFile reads and validates an ~/.omni/agents/<name>.conf drop-in.
-// Its shape is the same as an inline [agents.<name>] table, but flat (no
-// wrapper table) — see internal-docs/08-configuration.md §Per-agent config.
-func loadAgentFile(path string) (rawAgent, *fileLoad, error) {
-	fl, err := readFile(path)
-	if err != nil {
-		return rawAgent{}, nil, err
-	}
-	var r rawAgent
-	if _, err := toml.Decode(fl.content, &r); err != nil {
-		return rawAgent{}, fl, err
-	}
-	generic, err := decodeGeneric(fl)
-	if err != nil {
-		return rawAgent{}, fl, err
-	}
-	leaves := map[string]interface{}{}
-	flattenLeaves("", generic, leaves)
-	for p := range leaves {
-		if !knownPath(p, knownAgentPaths, knownAgentWildcards) {
-			fl.issues = append(fl.issues, unknownKeyIssue(p, p, fl.src(p), knownAgentPaths))
-		}
-	}
-	return r, fl, nil
 }

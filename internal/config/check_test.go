@@ -3,38 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
-	"time"
 )
-
-func TestParseDuration(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    time.Duration
-		wantErr bool
-	}{
-		{"14d", 14 * 24 * time.Hour, false},
-		{"10m", 10 * time.Minute, false},
-		{"1d12h", 36 * time.Hour, false},
-		{"90s", 90 * time.Second, false},
-		{"not-a-duration", 0, true},
-	}
-	for _, tc := range cases {
-		got, err := ParseDuration(tc.in)
-		if tc.wantErr {
-			if err == nil {
-				t.Errorf("ParseDuration(%q) = %v, want error", tc.in, got)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("ParseDuration(%q): unexpected error: %v", tc.in, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("ParseDuration(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}
 
 func TestUnknownKeyGlobal(t *testing.T) {
 	home := testHome(t)
@@ -48,7 +17,7 @@ mdoe = "route"
 		t.Fatalf("Load: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Level == LevelError && strings.Contains(is.Message, "mdoe") {
 			found = true
 			if !strings.Contains(is.Message, "mode") {
@@ -57,14 +26,14 @@ mdoe = "route"
 		}
 	}
 	if !found {
-		t.Errorf("expected an unknown-key issue for typo'd 'mdoe', got: %+v", e.Issues)
+		t.Errorf("expected an unknown-key issue for typo'd 'mdoe', got: %+v", e.Check())
 	}
 }
 
-func TestUnknownKeyAgentFile(t *testing.T) {
+func TestUnknownKeyAgentSection(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	writeTestFile(t, AgentConfigPath(home, "claude"), `
+	writeAgentSection(t, home, "claude", `
 bianry = "/usr/bin/claude"
 `)
 	e, err := LoadFrom(home, "claude")
@@ -72,69 +41,73 @@ bianry = "/usr/bin/claude"
 		t.Fatalf("Load: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
+	for _, is := range e.Check() {
 		if is.Level == LevelError && strings.Contains(is.Message, "bianry") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected an unknown-key issue for 'bianry', got: %+v", e.Issues)
+		t.Errorf("expected an unknown-key issue for 'bianry', got: %+v", e.Check())
 	}
 	if e.Binary.V != "" {
 		t.Errorf("binary should not have been set from an unknown key, got %q", e.Binary.V)
 	}
 }
 
-func TestDurationParseErrorIsNonFatal(t *testing.T) {
+// TestBadValueIsNonFatal checks that an invalid value is a LevelError that
+// `omni config check` reports, not a Fatal that refuses to load — and that
+// the key keeps its lower-layer value rather than silently becoming a zero.
+func TestBadValueIsNonFatal(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
 	writeTestFile(t, GlobalConfigPath(home), `
-[defaults.record]
-retention = "not-a-duration"
+[defaults]
+mode = "not-a-mode"
 `)
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
 	found := false
-	for _, is := range e.Issues {
-		if is.Path == "record.retention" && is.Level == LevelError {
+	for _, is := range e.Check() {
+		if is.Path == "mode" && is.Level == LevelError {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError issue for a bad duration, got: %+v", e.Issues)
+		t.Errorf("expected a LevelError issue for a bad mode, got: %+v", e.Check())
 	}
-	// Falls back to the built-in default rather than a zero duration.
-	if e.Record.Retention.Source != builtinSource {
-		t.Errorf("record.retention source = %q, want untouched built-in default", e.Record.Retention.Source)
+	// Falls back to the built-in default rather than an empty mode.
+	if e.Mode.V != ModeRecord || e.Mode.Source != builtinSource {
+		t.Errorf("mode = %+v, want untouched built-in default", e.Mode)
 	}
 }
 
 func TestShowFormatsProvenance(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	writeTestFile(t, AgentConfigPath(home, "claude"), `
-mode = "route"
+	writeAgentSection(t, home, "claude", `
+mode = "off"
 
-[model_map]
-"claude-opus-5" = "claude-sonnet-5"
+[[route]]
+match = "claude-opus-5"
+model = "claude-sonnet-5"
 `)
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	out := e.Show()
-	if !strings.Contains(out, `mode`) || !strings.Contains(out, `"route"`) {
-		t.Errorf("Show() missing mode=route:\n%s", out)
+	if !strings.Contains(out, `mode`) || !strings.Contains(out, `"off"`) {
+		t.Errorf("Show() missing mode=off:\n%s", out)
 	}
-	if !strings.Contains(out, "claude.conf") {
+	if !strings.Contains(out, "omni.conf") {
 		t.Errorf("Show() missing file provenance:\n%s", out)
 	}
 	if !strings.Contains(out, "(built-in default)") {
 		t.Errorf("Show() missing built-in default provenance for untouched keys:\n%s", out)
 	}
 	if !strings.Contains(out, "claude-opus-5 → claude-sonnet-5") {
-		t.Errorf("Show() missing model_map arrow formatting:\n%s", out)
+		t.Errorf("Show() missing route arrow formatting:\n%s", out)
 	}
 }

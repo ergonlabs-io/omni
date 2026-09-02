@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+
+	"github.com/ergonlabs-io/omni/internal/suggest"
 )
 
 // APIStyle names the wire schema an agent speaks. It determines whether omni
@@ -154,34 +156,9 @@ func Names() []string {
 	return out
 }
 
-// Suggest returns names within edit distance 2 of input, for "did you mean".
+// Suggest returns the profile names close enough to input to be worth
+// offering as a correction. Matching is case-insensitive: agent names are
+// lowercase, and `omni Claude` is a typo worth catching.
 func Suggest(input string) []string {
-	var out []string
-	for _, n := range Names() {
-		if levenshtein(strings.ToLower(input), n) <= 2 {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-func levenshtein(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	prev := make([]int, len(rb)+1)
-	cur := make([]int, len(rb)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		cur[0] = i
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			cur[j] = min(min(cur[j-1]+1, prev[j]+1), prev[j-1]+cost)
-		}
-		prev, cur = cur, prev
-	}
-	return prev[len(rb)]
+	return suggest.Near(strings.ToLower(input), Names())
 }

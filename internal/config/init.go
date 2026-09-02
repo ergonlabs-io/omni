@@ -10,17 +10,11 @@ import (
 //go:embed templates/omni.conf.tmpl
 var omniConfTemplate []byte
 
-//go:embed templates/agents_claude.conf.tmpl
-var agentsClaudeTemplate []byte
-
-//go:embed templates/agents_codex.conf.tmpl
-var agentsCodexTemplate []byte
-
 // dirPerm and homePerm/caPerm implement the exact permissions
 // internal-docs/08-configuration.md §Bootstrap calls for: "~/.omni 0700,
 // ca/ 0700" set explicitly rather than relying on umask. Directories that
-// hold nothing sensitive on their own (agents/, profiles.d/, cache/,
-// sessions/) use the ordinary 0755 — the home directory's 0700 already
+// hold nothing sensitive on their own (profiles.d/, cache/, sessions/)
+// use the ordinary 0755 — the home directory's 0700 already
 // blocks other users from traversing into them at all.
 const (
 	homePerm = 0o700
@@ -29,18 +23,20 @@ const (
 	filePerm = 0o644
 )
 
-// Init creates the omni home tree under home and writes fully-commented
-// default config files, matching the layout in
-// internal-docs/08-configuration.md:
+// Init creates the omni home tree under home and writes one fully-commented
+// default config file:
 //
 //	~/.omni/
-//	├── omni.conf
-//	├── agents/{claude,codex}.conf
+//	├── omni.conf          (everything: defaults, backends, per-agent)
 //	├── profiles.d/
 //	├── ca/                (created empty — the CA itself is generated
 //	│                        lazily on first --all-traffic, never here)
 //	├── cache/
 //	└── sessions/
+//
+// Only omni.conf is written, and it is the only file omni reads for
+// defaults, backends, and per-agent settings — a single setting lives in a
+// single place.
 //
 // Init is idempotent: it never overwrites or removes an existing file or
 // directory. It returns the absolute paths of everything it newly created,
@@ -85,7 +81,6 @@ func Init(home string) ([]string, error) {
 	// spec. (An existing world-readable ~/.omni is left as the user made
 	// it; Init does not silently rewrite permissions out from under them.)
 
-	agentsDir := filepath.Join(home, "agents")
 	profilesDir := filepath.Join(home, "profiles.d")
 	caDir := filepath.Join(home, "ca")
 	cacheDir := filepath.Join(home, "cache")
@@ -95,7 +90,6 @@ func Init(home string) ([]string, error) {
 		path string
 		perm os.FileMode
 	}{
-		{agentsDir, dirPerm},
 		{profilesDir, dirPerm},
 		{caDir, caPerm}, // 0700 — will hold ca.pem / ca-key.pem once generated lazily
 		{cacheDir, dirPerm},
@@ -106,17 +100,8 @@ func Init(home string) ([]string, error) {
 		}
 	}
 
-	for _, f := range []struct {
-		path    string
-		content []byte
-	}{
-		{GlobalConfigPath(home), omniConfTemplate},
-		{AgentConfigPath(home, "claude"), agentsClaudeTemplate},
-		{AgentConfigPath(home, "codex"), agentsCodexTemplate},
-	} {
-		if err := writeFile(f.path, f.content, filePerm); err != nil {
-			return created, fmt.Errorf("config: init %s: %w", f.path, err)
-		}
+	if err := writeFile(GlobalConfigPath(home), omniConfTemplate, filePerm); err != nil {
+		return created, fmt.Errorf("config: init %s: %w", GlobalConfigPath(home), err)
 	}
 
 	return created, nil

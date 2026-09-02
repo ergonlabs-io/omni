@@ -21,7 +21,8 @@ Two of those fields are configurable per agent, which covers most of what
 people actually need:
 
 ```toml
-# ~/.omni/agents/claude.conf
+# ~/.omni/omni.conf
+[agents.claude]
 binary   = "/opt/claude-canary/bin/claude"   # which executable to run
 upstream = "https://gateway.internal"        # where omni forwards to
 ```

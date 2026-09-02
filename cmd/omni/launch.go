@@ -38,14 +38,14 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 	// (internal-docs/05-constraints.md §5), so a recorder that cannot be
 	// created downgrades to no recording rather than aborting the session.
 	var rec *record.Recorder
-	if eff.Record.Enabled.V && eff.Mode.V != config.ModeOff {
+	if eff.Mode.V != config.ModeOff {
 		home, herr := config.Home()
 		if herr != nil {
 			errorf("warning: cannot resolve omni home, recording disabled: %v", herr)
 		} else {
 			rec, err = record.New(
 				filepath.Join(home, "sessions"), p.Name, version,
-				record.WithRedaction(eff.Record.Redact.V),
+				record.WithRedaction(eff.Redact.V),
 			)
 			if err != nil {
 				errorf("warning: recording disabled: %v", err)
@@ -61,10 +61,35 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 		}()
 	}
 
+	// Routing is resolved before the proxy binds, so a bad backend or a
+	// missing credential fails in milliseconds rather than after the child
+	// is on screen (internal-docs/09-cli-design.md §9).
+	router, err := resolveRouter(eff, p)
+	if err != nil {
+		errorf("%v", err)
+		return exitConfig
+	}
+	if router != nil && verbose {
+		router.OnRoute = func(from, to, backend string) {
+			if backend == "" {
+				errorf("route: %s -> %s", from, to)
+				return
+			}
+			errorf("route: %s -> %s via %s", from, to, backend)
+		}
+	}
+
+	var extra []proxy.RawMiddleware
+	if router != nil {
+		extra = append(extra, proxy.RoutingMiddleware(router))
+	}
+
+	// ListenAddr is left unset: proxy.New binds 127.0.0.1 on an ephemeral
+	// port, which was the only address config was ever allowed to name.
 	srv, err := proxy.New(proxy.Config{
-		Upstream:   up,
-		Recorder:   rec,
-		ListenAddr: eff.Proxy.Listen.V,
+		Upstream:        up,
+		Recorder:        rec,
+		ExtraMiddleware: extra,
 	})
 	if err != nil {
 		errorf("cannot create proxy: %v", err)
@@ -144,10 +169,18 @@ func dryRun(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 	for _, r := range eff.Rows() {
 		fmt.Fprintf(out, "  %-22s %-24s %s\n", r.Path, r.Value, r.Source)
 	}
-	if len(eff.ModelMap.V) > 0 {
-		fmt.Fprintf(out, "model rewrites:\n")
-		for from, to := range eff.ModelMap.V {
-			fmt.Fprintf(out, "  %s -> %s\n", from, to)
+	if len(eff.Routes.V) > 0 {
+		rules, issues := eff.Resolve(string(p.APIStyle))
+		if eff.Mode.V == config.ModeOff {
+			fmt.Fprintf(out, "routing (inactive — mode is \"off\"):\n")
+		} else {
+			fmt.Fprintf(out, "routing (first match wins):\n")
+		}
+		for _, r := range rules {
+			fmt.Fprintf(out, "  %s\n", r)
+		}
+		for _, is := range issues {
+			fmt.Fprintf(out, "  %s: %s\n", is.Level, is.Message)
 		}
 	}
 	if home, err := config.Home(); err == nil {

@@ -8,50 +8,26 @@ package config
 
 // rawGlobal mirrors the top level of ~/.omni/omni.conf.
 type rawGlobal struct {
-	Defaults rawDefaults         `toml:"defaults"`
-	Agents   map[string]rawAgent `toml:"agents"`
+	Defaults rawDefaults           `toml:"defaults"`
+	Agents   map[string]rawAgent   `toml:"agents"`
+	Backends map[string]rawBackend `toml:"backends"`
 }
 
-// rawDefaults mirrors omni.conf's [defaults] table plus its subtables.
+// rawDefaults mirrors omni.conf's [defaults] table.
 type rawDefaults struct {
-	Mode       *string `toml:"mode"`
-	AllTraffic *bool   `toml:"all_traffic"`
-
-	Record rawRecord `toml:"record"`
-	Adapt  rawAdapt  `toml:"adapt"`
-	Proxy  rawProxy  `toml:"proxy"`
+	Mode   *string `toml:"mode"`
+	Redact *bool   `toml:"redact"`
 }
 
-// rawRecord mirrors a [*.record] table.
-type rawRecord struct {
-	Enabled   *bool   `toml:"enabled"`
-	Redact    *bool   `toml:"redact"`
-	Bodies    *bool   `toml:"bodies"`
-	Retention *string `toml:"retention"`
-}
-
-// rawAdapt mirrors a [*.adapt] table.
-type rawAdapt struct {
-	OnUnrepresentable *string `toml:"on_unrepresentable"`
-	ReportChanges     *bool   `toml:"report_changes"`
-}
-
-// rawProxy mirrors [defaults.proxy]. Global only — never per-agent.
-type rawProxy struct {
-	Listen      *string `toml:"listen"`
-	IdleTimeout *string `toml:"idle_timeout"`
-}
-
-// rawAgent mirrors both the inline [agents.<name>] table in omni.conf and
-// the shape of a drop-in ~/.omni/agents/<name>.conf file (which is the same
-// fields at the top level, without an [agents.<name>] wrapper).
+// rawAgent mirrors the [agents.<name>] table in omni.conf. The project
+// layer (./.omni.conf) decodes into the same shape, with its keys at the
+// top level and filtered down to the allowlist — see loadProjectConfig.
 type rawAgent struct {
-	Mode     *string           `toml:"mode"`
-	Binary   *string           `toml:"binary"`
-	Upstream *string           `toml:"upstream"`
-	ModelMap map[string]string `toml:"model_map"`
+	Mode     *string    `toml:"mode"`
+	Redact   *bool      `toml:"redact"`
+	Binary   *string    `toml:"binary"`
+	Upstream *string    `toml:"upstream"`
+	Route    []rawRoute `toml:"route"`
 
-	Adapt  rawAdapt          `toml:"adapt"`
-	Record rawRecord         `toml:"record"`
-	Env    map[string]string `toml:"env"`
+	Env map[string]string `toml:"env"`
 }

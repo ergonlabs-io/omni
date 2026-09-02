@@ -30,7 +30,7 @@ func runAgent(inv *Invocation) int {
 
 	if _, err := p.Resolve(); err != nil {
 		errorf("%v\n", err)
-		fmt.Fprintf(os.Stderr, "  install %s, or set its path in ~/.omni/agents/%s.conf\n",
+		fmt.Fprintf(os.Stderr, "  install %s, or set `binary` under [agents.%s] in ~/.omni/omni.conf\n",
 			p.Binary, p.Name)
 		return exitUnavailable
 	}
@@ -73,9 +73,9 @@ func runAgent(inv *Invocation) int {
 	if inv.Has("--record-only") {
 		overrides["mode"] = string(config.ModeRecord)
 	}
-	if inv.Has("--all-traffic") {
-		overrides["all_traffic"] = "true"
-	}
+	// --all-traffic sets nothing: Tier 2 full MITM is not implemented, so
+	// there is no config key for it to move. The flag survives only for the
+	// SupportsTier2 rejection above, which is a real check.
 	if len(overrides) > 0 {
 		if err := eff.Override(overrides, "command line"); err != nil {
 			errorf("%v", err)
@@ -93,7 +93,10 @@ func runAgent(inv *Invocation) int {
 		}
 	}
 
-	if err := eff.ModelMapError(p.APIStyle.CanRewrite()); err != nil {
+	// --model-map is layer 6 for routing: each flag becomes a rule ahead of
+	// the file-configured ones, so a one-off rewrite wins over config
+	// without the user having to edit anything.
+	if err := applyModelMapFlags(eff, inv.All("--model-map")); err != nil {
 		errorf("%v", err)
 		return exitUsage
 	}

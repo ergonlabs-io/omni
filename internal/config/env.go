@@ -17,7 +17,7 @@ import (
 // Nesting uses "__" (e.g. OMNI_RECORD__REDACT -> record.redact); a single
 // "_" is part of a key's own name (e.g. all_traffic, idle_timeout) and is
 // never treated as a separator, matching every multi-word key in the TOML
-// schema. model_map and env (the two map-valued fields) cannot be set this
+// schema. route and env (the list- and map-valued fields) cannot be set this
 // way — model names routinely contain characters environment variable
 // naming can't carry unambiguously — and produce a warning Issue if
 // attempted.
@@ -79,7 +79,7 @@ func envIssue(envVar, path, source, local string, known bool, err error) []Issue
 		return []Issue{{
 			Path: path,
 			Message: fmt.Sprintf(
-				"environment variable %s does not map to a known config key %q (model_map and env cannot be set via environment variables)",
+				"environment variable %s does not map to a known config key %q (route and env cannot be set via environment variables)",
 				envVar, local,
 			),
 			Source: source,
@@ -95,51 +95,22 @@ func envIssue(envVar, path, source, local string, known bool, err error) []Issue
 }
 
 // setRawDefaultsField sets the field of d named by the dotted, defaults-
-// relative path (e.g. "record.redact") to v, coercing to the field's type.
-// known reports whether path names a real field; err reports a type
-// coercion failure (e.g. a non-boolean value for a bool field).
+// relative path to v, coercing to the field's type. known reports whether
+// path names a real key; err reports a coercion failure (e.g. a non-boolean
+// value for a bool field).
+//
+// This is also how Override applies CLI flags — see Load's doc comment for
+// why layer 6 is a separate call.
 func setRawDefaultsField(d *rawDefaults, path, v string) (known bool, err error) {
 	switch path {
 	case "mode":
 		d.Mode = &v
-	case "all_traffic":
+	case "redact":
 		b, e := strconv.ParseBool(v)
 		if e != nil {
 			return true, e
 		}
-		d.AllTraffic = &b
-	case "record.enabled":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		d.Record.Enabled = &b
-	case "record.redact":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		d.Record.Redact = &b
-	case "record.bodies":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		d.Record.Bodies = &b
-	case "record.retention":
-		d.Record.Retention = &v
-	case "adapt.on_unrepresentable":
-		d.Adapt.OnUnrepresentable = &v
-	case "adapt.report_changes":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		d.Adapt.ReportChanges = &b
-	case "proxy.listen":
-		d.Proxy.Listen = &v
-	case "proxy.idle_timeout":
-		d.Proxy.IdleTimeout = &v
+		d.Redact = &b
 	default:
 		return false, nil
 	}
@@ -152,38 +123,16 @@ func setRawAgentField(a *rawAgent, path, v string) (known bool, err error) {
 	switch path {
 	case "mode":
 		a.Mode = &v
+	case "redact":
+		b, e := strconv.ParseBool(v)
+		if e != nil {
+			return true, e
+		}
+		a.Redact = &b
 	case "binary":
 		a.Binary = &v
 	case "upstream":
 		a.Upstream = &v
-	case "record.enabled":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		a.Record.Enabled = &b
-	case "record.redact":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		a.Record.Redact = &b
-	case "record.bodies":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		a.Record.Bodies = &b
-	case "record.retention":
-		a.Record.Retention = &v
-	case "adapt.on_unrepresentable":
-		a.Adapt.OnUnrepresentable = &v
-	case "adapt.report_changes":
-		b, e := strconv.ParseBool(v)
-		if e != nil {
-			return true, e
-		}
-		a.Adapt.ReportChanges = &b
 	default:
 		return false, nil
 	}
