@@ -110,8 +110,8 @@ omni --mode off claude              # this run only
 
 ```toml
 # ~/.omni/omni.conf
-[defaults.record]
-enabled = false
+[defaults]
+mode = "off"
 ```
 
 `mode = "off"` disables recording for the session; the proxy still runs and
@@ -119,10 +119,10 @@ still forwards. Per-agent and per-project overrides work the same way — see
 [Configuration file](../../configuration/configuration-file/).
 
 :::note[Phase 0]
-`record.bodies` and `record.retention` are accepted and validated, but not
-yet applied: bodies are always captured, and old sessions are not pruned
-automatically. The `omni sessions` subcommand, which will list and prune
-them, is not implemented — for now, `~/.omni/sessions` is an ordinary
+Bodies are always captured while recording, and old sessions are not pruned
+automatically. There are no config keys for either, because there is nothing
+behind them to control. The `omni sessions` subcommand, which will list and
+prune them, is not implemented; for now `~/.omni/sessions` is an ordinary
 directory and `rm -rf` is the prune command.
 :::
 

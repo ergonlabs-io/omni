@@ -16,36 +16,32 @@ its root:
 
 ```toml
 # ./.omni.conf — checked into the repo
-mode = "route"
+mode = "off"
 
 [[route]]
 match = "claude-opus-*"
 model = "claude-sonnet-5"
-
-[record]
-bodies = false
 ```
 
-This is layer 5 of [seven](../configuration-file/#precedence): it overrides
+This is layer 4 of [six](../configuration-file/#precedence): it overrides
 your global and per-agent files, and is overridden by `OMNI_*` variables and
 CLI flags.
 
 ## The allowlist
 
-A project file may set exactly three things:
+A project file may set exactly two things:
 
 | Key | Effect |
 |---|---|
-| `mode` | `off`, `record`, or `route` for work in this repo. |
+| `mode` | `off` or `record` for work in this repo. |
 | `route` | Routing rules — but only ones that rename a model. |
-| `record.bodies` | Whether request and response bodies are captured. |
 
 Everything else in the file is **ignored and reported as a warning**, by
 name, with the file and line that set it:
 
 ```
 omni: binary: "binary" is not permitted in project config
-  (./.omni.conf may only set mode, route, record.bodies) — ignored
+  (./.omni.conf may only set mode, route) — ignored
   (./.omni.conf:4)
 ```
 
@@ -63,10 +59,8 @@ cloning a repository dangerous:
   `omni claude`.
 - **`upstream`** — silent exfiltration. Your API traffic, including your
   prompts and your source, redirected to someone else's endpoint.
-- **`record.redact`** — a repo could turn off credential redaction and have
-  your API key written to disk in plaintext.
-- **`proxy.listen`** and **`all_traffic`** — the bind address and the scope
-  of interception are yours to decide, not a checkout's.
+- **`redact`** — a repo could turn off credential redaction and have your
+  API key written to disk in plaintext.
 
 The implementation matches the argument. The project layer does not decode
 into a struct and then check the result; it walks the raw document and only

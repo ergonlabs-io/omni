@@ -96,12 +96,11 @@ This project documents what it does, not what it intends to do.
 | ✅ | PTY, raw mode, `SIGWINCH`, signal forwarding, exit codes | Works |
 | ✅ | `omni init`, `config show`, `config check`, `config path` | Works |
 | ✅ | `--dry-run`, `--version`, `--mode`, `--verbose`, `--model-map` | Works |
-| ✅ | `[[route]]` rules / `mode = "route"` | Works |
+| ✅ | `[[route]]` rules and `[backends.*]` | Works |
 | ✅ | `[backends.*]` routing to another provider | Works |
 | 🚧 | Capability adapter | Designed |
 | 🚧 | `--all-traffic` (Tier 2 full MITM) | Validated per agent; no CA is generated yet |
 | 🚧 | `omni sessions`, `omni ca`, `omni completions` | Reserved; exit with *not yet implemented* |
-| 🚧 | `record.bodies`, `record.retention`, `adapt.*` | Accepted, not yet applied |
 
 ## Install
 
@@ -214,22 +213,19 @@ exchange count, and a token summary.
 ## Configuration
 
 TOML, at `~/.omni/omni.conf` — one file holding global defaults, backends,
-and per-agent settings. An agent can optionally be split into
-`~/.omni/agents/<agent>.conf`, which wins over its inline section, and a
-per-project `.omni.conf` adds a restricted repo-local layer. Seven precedence
-layers, and `omni config show` reports which one won for every value.
+and per-agent settings. A per-project `.omni.conf` adds a restricted
+repo-local layer. Six precedence layers, and `omni config show` reports which
+one won for every value.
 
 ```toml
 # ~/.omni/omni.conf
 [defaults]
-mode = "record"        # off | record | route
-
-[defaults.record]
-redact = true          # strip Authorization / x-api-key / *-api-key
-
-[defaults.proxy]
-listen = "127.0.0.1:0" # loopback only; a non-loopback bind is refused
+mode   = "record"   # off | record
+redact = true       # strip Authorization / x-api-key / *-api-key
 ```
+
+That is the whole of `[defaults]`. Anything omni cannot actually do yet has
+no key: a setting exists here only if something reads it.
 
 ```sh
 omni config show --agent claude   # effective values + provenance
@@ -239,8 +235,9 @@ omni config path                  # where omni thinks its home is
 
 ### Routing a model somewhere else
 
-`mode = "route"` turns the rules on. Rules are an ordered list, first match
-wins; `match` is a glob against the model the agent asked for. A rule sends
+Writing a rule turns routing on; there is no mode to remember. Rules are an
+ordered list, first match wins; `match` is a glob against the model the agent
+asked for. A rule sends
 the request to a `backend`, renames the model in place with `model`, or both.
 Anything unmatched goes to the agent's own upstream, untouched.
 
@@ -251,9 +248,6 @@ base_url    = "https://openrouter.ai/api"   # serves the Messages API at /v1/mes
 api_key_env = "OPENROUTER_API_KEY"          # the name; never the key itself
 api_style   = "anthropic"
 model       = "minimax/minimax-m3:free"
-
-[agents.claude]
-mode = "route"
 
 [[agents.claude.route]]
 match   = "claude-haiku-4-5*"               # alias and dated id, one rule
@@ -290,8 +284,9 @@ backend, or write a rule naming one. Renaming a model is a local preference;
 choosing who receives your prompts and bills you for them is not a decision a
 repository you cloned gets to make.
 
-Two things are fatal rather than advisory: a non-loopback `proxy.listen`, and a
-credential-shaped value anywhere in a config file.
+One thing is fatal rather than advisory: a credential-shaped value anywhere
+in a config file. The proxy's loopback-only bind is not a config key at all —
+it is simply what omni does.
 
 ## Roadmap
 

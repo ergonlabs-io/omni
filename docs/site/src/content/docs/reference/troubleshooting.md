@@ -74,13 +74,15 @@ Exit `64`. An agent flag was placed before the agent name. Move it after:
 
 ### `refusing to load` / `refusing to bind`
 
-Exit `78`. Two configuration problems are fatal rather than advisory:
+Exit `78`. One configuration problem is fatal rather than advisory:
 
-- `proxy.listen` does not resolve to loopback. The proxy holds live
-  credentials; it will not bind anywhere reachable off-host.
 - A value somewhere in config looks like an API key or bearer token.
   Credentials belong in the environment or the agent's own auth, never in a
   config file.
+
+`refusing to bind` comes from the proxy, not from config: it holds live
+credentials and will not bind anywhere reachable off-host. There is no
+setting involved.
 
 `omni config check` reports both without launching anything.
 
@@ -107,13 +109,13 @@ implementation behind them yet.
 Check, in order:
 
 ```sh
-omni --dry-run claude          # mode, record.enabled, and their sources
+omni --dry-run claude          # mode, redact, and their sources
 ls -la ~/.omni/sessions        # does the directory exist and is it writable?
 omni -v claude                 # prints the proxy address and session directory
 ```
 
-- `mode = "off"` or `record.enabled = false` from any layer disables it.
-  `--dry-run` names the file and line that set them.
+- `mode = "off"` from any layer disables it. `--dry-run` names the file and
+  line that set it.
 - Recording is fail-open by design: a recorder that cannot be created prints
   a warning to stderr and the session continues without it. Run with `-v` or
   read stderr rather than assuming silence means success.
@@ -154,6 +156,6 @@ omni config show --agent claude
 ```
 
 Every value is printed with the file and line, environment variable, or
-layer that set it. With seven layers, provenance is usually the whole answer
+layer that set it. With six layers, provenance is usually the whole answer
 — most surprises are an `OMNI_*` variable inherited from a shell profile, or
 a `.omni.conf` in the directory you happen to be in.

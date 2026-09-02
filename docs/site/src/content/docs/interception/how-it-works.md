@@ -74,9 +74,10 @@ tracking. The session degrades to non-resizable rather than failing.
 The proxy is an HTTP server bound to `127.0.0.1` on an ephemeral port,
 started before the agent and shut down after it.
 
-**Loopback only, always.** The proxy carries live API credentials in flight.
-A configured `proxy.listen` that does not resolve to loopback is refused at
-load — not warned about, refused. There is no flag to override it.
+**Loopback only, always.** The proxy carries live API credentials in flight,
+so the bind address is not configurable at all: omni picks `127.0.0.1` on an
+ephemeral port, and a non-loopback address is refused by the proxy itself.
+There is no config key and no flag to override it.
 
 **Byte-identical passthrough.** What upstream sends is what the agent
 receives. Bodies are never rewritten unless a rule you configured says so,
@@ -115,7 +116,7 @@ and adaptation need.
 Today only the raw tier exists, with one stage wired into it: the recorder.
 
 :::note[Phase 0]
-`route` and `adapt` are designed and have their seam in the code, but are not
+Capability adaptation is designed and has its seam in the code, but is not
 implemented. `--mode route` currently records exactly as `record` does. See
 [Model routing](../model-routing/).
 :::

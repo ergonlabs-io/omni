@@ -10,7 +10,7 @@ related:
 
 # Environment variables
 
-Every scalar config key can be set from the environment. This is layer 6 of
+Every scalar config key can be set from the environment. This is layer 5 of
 [seven](../configuration-file/#precedence) — above every file, below CLI
 flags — which makes it the right tool for one shell, one CI job, or one
 `direnv` block.
@@ -27,16 +27,14 @@ prefix `OMNI_`.
 | Config key | Variable |
 |---|---|
 | `mode` | `OMNI_MODE` |
-| `all_traffic` | `OMNI_ALL_TRAFFIC` |
-| `record.redact` | `OMNI_RECORD__REDACT` |
-| `record.retention` | `OMNI_RECORD__RETENTION` |
-| `proxy.listen` | `OMNI_PROXY__LISTEN` |
-| `adapt.on_unrepresentable` | `OMNI_ADAPT__ON_UNREPRESENTABLE` |
+| `redact` | `OMNI_REDACT` |
+| `binary` (agent-scoped) | `OMNI_AGENTS__CLAUDE__BINARY` |
+| `upstream` (agent-scoped) | `OMNI_AGENTS__CLAUDE__UPSTREAM` |
 
 A double underscore is the separator; a single underscore is part of a key's
-own name. That distinction is why `all_traffic` and `idle_timeout` survive
-the round trip unambiguously — every multi-word key in the schema uses a
-single underscore, and every level of nesting uses two.
+own name. No key in the current schema has an underscore in its own name, so
+in practice `__` only ever separates the `AGENTS` prefix from an agent name
+and its key.
 
 ## Scoping to one agent
 
@@ -88,8 +86,8 @@ OMNI_HOME=/tmp/omni-scratch omni init
 OMNI_HOME=/tmp/omni-scratch omni claude
 ```
 
-Everything moves with it: `omni.conf`, `agents/`, the CA directory, and
-`sessions/`. This is the supported way to keep omni's state somewhere other
+Everything moves with it: `omni.conf`, `profiles.d/`, the CA directory,
+and `sessions/`. This is the supported way to keep omni's state somewhere other
 than `~/.omni` — for a throwaway experiment, a second identity, or a test
 harness that must not touch your real sessions.
 
@@ -103,7 +101,7 @@ inherited setting from a shell profile or a CI environment is one command
 away from being explained:
 
 ```
-mode              "route"           $OMNI_MODE
+mode              "off"             $OMNI_MODE
 record.redact     true              (built-in default)
-proxy.listen      "127.0.0.1:0"     ~/.omni/omni.conf:31
+redact            true              ~/.omni/omni.conf:20
 ```

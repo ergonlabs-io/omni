@@ -76,7 +76,7 @@ it first.
 
 ```toml
 # ~/.omni/omni.conf
-[defaults.record]
+[defaults]
 redact = false
 ```
 
@@ -86,7 +86,7 @@ API keys to disk in plaintext, so do it in a scratch home and delete it after:
 
 ```sh
 OMNI_HOME=/tmp/omni-debug omni init
-OMNI_HOME=/tmp/omni-debug OMNI_RECORD__REDACT=false omni claude
+OMNI_HOME=/tmp/omni-debug OMNI_REDACT=false omni claude
 # ... reproduce ...
 rm -rf /tmp/omni-debug
 ```

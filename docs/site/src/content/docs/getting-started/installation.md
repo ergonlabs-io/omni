@@ -70,10 +70,7 @@ together.
 
 ```
 ~/.omni/
-├── omni.conf              global config, fully commented
-├── agents/
-│   ├── claude.conf        per-agent drop-in
-│   └── codex.conf
+├── omni.conf              everything: defaults, backends, per-agent
 ├── profiles.d/            your own agent profiles
 ├── ca/                    0700; the CA is generated lazily, not here
 ├── cache/

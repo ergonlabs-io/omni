@@ -1,6 +1,6 @@
 ---
 title: Configuration file
-summary: The ~/.omni tree, omni.conf's TOML keys, the seven precedence layers,
+summary: The ~/.omni tree, omni.conf's TOML keys, the six precedence layers,
   and how to find out which layer set a value.
 last_updated: 2026-08-31
 related:
@@ -28,24 +28,21 @@ replace.
 |---|---|---|
 | 1 | Built-in defaults | compiled in |
 | 2 | `~/.omni/omni.conf` `[defaults]` | global |
-| 3 | `~/.omni/omni.conf` `[agents.X]` | per-agent, inline |
-| 4 | `~/.omni/agents/X.conf` | per-agent drop-in |
-| 5 | `./.omni.conf` | per-project |
-| 6 | `OMNI_*` environment variables | per-invocation |
-| 7 | CLI flags | highest |
+| 3 | `~/.omni/omni.conf` `[agents.X]` | per-agent |
+| 4 | `./.omni.conf` | per-project |
+| 5 | `OMNI_*` environment variables | per-invocation |
+| 6 | CLI flags | highest |
 
-Layers 3 and 4 both exist on purpose, but only layer 3 is scaffolded.
 `omni init` writes a single `omni.conf` holding everything, with per-agent
-settings in `[agents.<name>]` tables. `agents/<name>.conf` is there if you
-would rather split an agent into its own file, and wins — the same way
-`conf.d` works everywhere else in Unix.
+settings in `[agents.<name>]` tables. That is the only place a per-agent
+setting lives.
 
 One exception to the per-key deep merge: a `[[route]]` list does not merge
 across layers. A layer that declares any rules replaces the list, because
 rules are ordered and first-match-wins, and there is no order between two
 files' lists a reader could predict.
 
-Layer 5 is read from the working directory **only**. omni does not walk up
+Layer 4 is read from the working directory **only**. omni does not walk up
 parent directories: ancestor-walking config is a footgun on a tool that
 rewrites which model serves your requests, and you should be able to tell
 what omni will do by looking at one directory. It may also set only three
@@ -55,32 +52,21 @@ keys — see [Per-project config](../per-project-config/).
 
 ```toml
 [defaults]
-# off | record | route
+# off | record
 #   off     passthrough, no proxy involvement beyond forwarding
 #   record  capture all traffic to ~/.omni/sessions (default)
-#   route   record + apply the [[route]] rules and the capability adapter
+# [[route]] rules apply whenever they exist and mode is not "off".
 mode = "record"
 
-all_traffic = false            # Tier 2 full MITM; requires a CA
-
-[defaults.record]
-enabled   = true
-redact    = true               # strip Authorization / x-api-key / *-api-key
-bodies    = true               # request+response bodies, not just metadata
-retention = "14d"              # prune sessions older than this on startup
-
-[defaults.adapt]
-on_unrepresentable = "error"   # error | warn
-report_changes     = true      # log every mutation the adapter makes
-
-[defaults.proxy]
-listen       = "127.0.0.1:0"   # ephemeral. Loopback only — do not change.
-idle_timeout = "10m"           # must exceed a plausible tool-loop duration
+redact = true                  # strip Authorization / x-api-key / *-api-key
 ```
 
-`listen` is loopback-only by design. omni holds live credentials while it
-runs, so a non-loopback bind address is refused at startup rather than
-warned about.
+Those two keys are the whole of `[defaults]`. omni deliberately has no key
+for a feature it cannot perform yet.
+
+The proxy binds loopback on an ephemeral port and is not configurable. omni
+holds live credentials while it runs, so a non-loopback bind is refused
+outright rather than made a setting.
 
 ## Backends
 
@@ -101,7 +87,7 @@ Per-agent settings go in an `[agents.<name>]` table:
 
 ```toml
 [agents.claude]
-mode = "route"
+mode = "record"
 
 # binary = "/Users/me/.local/bin/claude"   # pin a version or a local build
 
@@ -115,22 +101,16 @@ match = "claude-opus-*"
 model = "claude-sonnet-5"
 ```
 
-The same settings in a `~/.omni/agents/claude.conf` drop-in are written flat,
-without the `agents.claude` prefix — `mode = "route"` at the top level and
-rules as `[[route]]`:
+A repo-local `./.omni.conf` writes the same settings flat, without the
+`agents.claude` prefix — `mode` at the top level and rules as
+`[[route]]` — though only a short allowlist of keys is honored there:
 
 ```toml
-mode = "route"
+mode = "record"
 
 [[route]]
 match   = "claude-haiku-4-5*"
 backend = "openrouter"
-
-[adapt]
-on_unrepresentable = "error"
-
-[record]
-bodies = true
 
 [env]
 # Extra env for the child. Never overrides omni's own steering variables
@@ -138,8 +118,8 @@ bodies = true
 # ANTHROPIC_LOG = "debug"
 ```
 
-That is an example of a file you might write. The one `omni init` generates
-has the same shape with every key commented out.
+That is an example of a file you might write. The `omni.conf` that `omni
+init` generates has the same shape with every key commented out.
 
 Model rewriting is sticky for a session rather than per-request, for
 prompt-cache reasons: a model that changes mid-session throws away the cached
@@ -162,7 +142,7 @@ Every key is settable as `OMNI_<PATH>`, with `__` for nesting:
 ```sh
 OMNI_HOME=/tmp/omni-test
 OMNI_MODE=route
-OMNI_RECORD__REDACT=false
+OMNI_REDACT=false
 OMNI_AGENTS__CLAUDE__MODE=record
 ```
 
@@ -185,11 +165,11 @@ agent has started is much worse than failing in five milliseconds.
   line that set them.
 
 Two problems are fatal — omni refuses to load at all rather than warning: a
-`proxy.listen` that is not loopback, and any value anywhere in config that
+any value anywhere in config that
 looks like an API key or bearer token. Every key, its default, and whether it
 is applied yet is listed in the
 [config schema](../../reference/config-schema/).
 
 When something is surprising, `omni config show` annotates each effective
-value with the layer that set it. With seven layers, "why is omni doing
+value with the layer that set it. With six layers, "why is omni doing
 that?" is the question, and provenance is the whole answer.

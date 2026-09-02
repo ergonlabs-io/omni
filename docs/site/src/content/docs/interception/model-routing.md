@@ -18,7 +18,6 @@ request for another, somewhere else.
 ```toml
 # ~/.omni/omni.conf
 [agents.claude]
-mode = "route"
 
 [[agents.claude.route]]
 match = "claude-opus-*"
@@ -197,17 +196,13 @@ to.
 
 The planned answer is a capability adapter that runs after routing, with a
 configured policy for what to do when a request cannot be faithfully
-represented on the target model:
-
-```toml
-[defaults.adapt]
-on_unrepresentable = "error"   # error | warn
-report_changes     = true
-```
-
-`error` refuses the request rather than sending a quietly degraded version of
-it. That is the default, and the right one: a silently downgraded request
+represented on the target model — refuse the request, or warn and send a
+degraded one. Refusing is the right default: a silently downgraded request
 produces a worse answer with no indication that anything happened.
+
+There is no config for this yet, deliberately: a policy key for an adapter
+that does not exist would only promise behaviour omni cannot deliver. The
+keys arrive with the adapter.
 
 Unlike routing, the adapter is designed and configurable but not yet
 implemented.

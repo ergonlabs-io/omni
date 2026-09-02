@@ -20,8 +20,8 @@ is on your `PATH`. See [Installation](../installation/) otherwise.
 omni init
 ```
 
-Creates `~/.omni` with a fully commented `omni.conf`, per-agent drop-ins,
-and an empty `sessions/`. It is idempotent and never overwrites a file you
+Creates `~/.omni` with a fully commented `omni.conf` and an empty
+`sessions/`. It is idempotent and never overwrites a file you
 have edited, so run it again any time you want a missing piece restored.
 
 ```sh
@@ -44,16 +44,8 @@ would launch: /Users/me/.local/bin/claude
 with env:
   ANTHROPIC_BASE_URL=http://127.0.0.1:<ephemeral>
 config:
-  mode                   "record"                 ~/.omni/omni.conf:10
-  all_traffic            false                    ~/.omni/omni.conf:15
-  record.enabled         true                     ~/.omni/omni.conf:18
-  record.redact          true                     ~/.omni/omni.conf:19
-  record.bodies          true                     ~/.omni/omni.conf:20
-  record.retention       "336h0m0s"               ~/.omni/omni.conf:21
-  adapt.on_unrepresentable "error"                  ~/.omni/omni.conf:27
-  adapt.report_changes   true                     ~/.omni/omni.conf:28
-  proxy.listen           "127.0.0.1:0"            ~/.omni/omni.conf:31
-  proxy.idle_timeout     "10m0s"                  ~/.omni/omni.conf:32
+  mode                   "record"                 ~/.omni/omni.conf:15
+  redact                 true                     ~/.omni/omni.conf:20
 sessions -> /Users/me/.omni/sessions
 ```
 

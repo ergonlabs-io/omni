@@ -46,8 +46,6 @@ name is ambiguous, `omni run <agent>` is the unambiguous form.
 | `--all-traffic` | | Full MITM of all traffic, not just the LLM API. Requires a CA, and fails loudly on agents with no confirmed trust mechanism. |
 | `--dry-run` | | Print what would happen; launch nothing. |
 | `-v`, `--verbose` | | Diagnostics to stderr. Repeatable. |
-| `-q`, `--quiet` | | Suppress warnings. |
-| `--no-color` | | Disable color. `NO_COLOR` is also honored. |
 | `--version` | | Version, commit, and build date. |
 | `-h`, `--help` | | omni's help. |
 
