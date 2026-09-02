@@ -33,7 +33,8 @@ func loadProjectConfig(path string) (rawAgent, *fileLoad, error) {
 	flattenLeaves("", generic, leaves)
 
 	var out rawAgent
-	for p, v := range leaves {
+	for _, p := range sortedLeaves(leaves) {
+		v := leaves[p]
 		if !projectAllowedPath(p) {
 			fl.issues = append(fl.issues, Issue{
 				Path: p,
@@ -54,10 +55,12 @@ func loadProjectConfig(path string) (rawAgent, *fileLoad, error) {
 }
 
 // assignProjectLeaf sets the one field on dst that path names, after
-// projectAllowedPath has already confirmed path is on the allowlist.
+// projectAllowedPath has already confirmed path is on the allowlist. It
+// type-checks the untyped TOML value on the way, since nothing has decoded
+// this file into a typed struct.
 func assignProjectLeaf(dst *rawAgent, path string, v interface{}, source string) *Issue {
-	switch {
-	case path == "mode":
+	switch path {
+	case "mode":
 		s, ok := v.(string)
 		if !ok {
 			iss := typeIssue(path, "string", v, source)
@@ -66,16 +69,7 @@ func assignProjectLeaf(dst *rawAgent, path string, v interface{}, source string)
 		dst.Mode = &s
 		return nil
 
-	case path == "record.bodies":
-		b, ok := v.(bool)
-		if !ok {
-			iss := typeIssue(path, "bool", v, source)
-			return &iss
-		}
-		dst.Record.Bodies = &b
-		return nil
-
-	case path == "route":
+	case "route":
 		return assignProjectRoutes(dst, path, v, source)
 
 	default:

@@ -28,7 +28,6 @@ func TestInitCreatesTree(t *testing.T) {
 	}
 
 	wantDirs := []string{
-		filepath.Join(home, "agents"),
 		filepath.Join(home, "profiles.d"),
 		filepath.Join(home, "ca"),
 		filepath.Join(home, "cache"),
@@ -77,11 +76,13 @@ func TestInitIsIdempotent(t *testing.T) {
 		t.Fatalf("first Init: %v", err)
 	}
 
-	// Modify a generated file so we can tell whether a second Init touches it.
-	customContent := "# customized by the user\nmode = \"route\"\n"
-	claudeConf := AgentConfigPath(home, "claude")
-	if err := os.WriteFile(claudeConf, []byte(customContent), 0o644); err != nil {
-		t.Fatalf("customize claude.conf: %v", err)
+	// Modify the generated file so we can tell whether a second Init
+	// touches it. omni.conf is the one file Init writes, which makes it the
+	// real test of "never clobber".
+	customContent := "# customized by the user\n[defaults]\nmode = \"route\"\n"
+	conf := GlobalConfigPath(home)
+	if err := os.WriteFile(conf, []byte(customContent), 0o644); err != nil {
+		t.Fatalf("customize omni.conf: %v", err)
 	}
 
 	created, err := Init(home)
@@ -92,9 +93,9 @@ func TestInitIsIdempotent(t *testing.T) {
 		t.Errorf("second Init on an already-initialized home created: %v, want nothing", created)
 	}
 
-	got, err := os.ReadFile(claudeConf)
+	got, err := os.ReadFile(conf)
 	if err != nil {
-		t.Fatalf("read claude.conf: %v", err)
+		t.Fatalf("read omni.conf: %v", err)
 	}
 	if string(got) != customContent {
 		t.Errorf("Init clobbered a user-modified file; got %q, want %q", got, customContent)
@@ -120,12 +121,12 @@ func TestInitBootstrappedConfigLoads(t *testing.T) {
 			t.Errorf("bootstrapped config has an error-level issue: %s", is)
 		}
 	}
-	// The generated agents/claude.conf overrides nothing: a fresh install
-	// must not change how the agent behaves, and `omni init` never rewrites
-	// this file once it exists, so anything active here is permanent for
-	// that user.
+	// The generated [agents.claude] section overrides nothing: a fresh
+	// install must not change how the agent behaves, and `omni init` never
+	// rewrites omni.conf once it exists, so anything active there is
+	// permanent for that user.
 	if e.Mode.V != ModeRecord {
-		t.Errorf("claude mode = %q, want record (inherited; the generated agents/claude.conf must not override it)", e.Mode.V)
+		t.Errorf("claude mode = %q, want record (inherited; the generated [agents.claude] must not override it)", e.Mode.V)
 	}
 	if len(e.Routes.V) != 0 {
 		t.Errorf("bootstrapped claude config has live routing rules %v; the generated template must ship none", e.Routes.V)

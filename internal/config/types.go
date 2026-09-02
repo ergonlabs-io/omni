@@ -3,21 +3,25 @@ package config
 import "fmt"
 
 // Mode controls how much omni does to a session's intercepted traffic.
+//
+// There is deliberately no separate "route" mode: routing is on whenever
+// [[route]] rules exist and Mode is not off. A rule you wrote is a rule you
+// meant, and a third mode would only add a state where rules are configured,
+// valid, shown by `config show`, and silently doing nothing.
 type Mode string
 
 const (
-	// ModeOff is passthrough: no proxy involvement beyond forwarding.
+	// ModeOff is passthrough: forward only. Nothing is recorded and no rule
+	// is applied.
 	ModeOff Mode = "off"
-	// ModeRecord captures all traffic to ~/.omni/sessions. Default.
+	// ModeRecord captures all traffic to ~/.omni/sessions, and applies any
+	// [[route]] rules. Default.
 	ModeRecord Mode = "record"
-	// ModeRoute records and additionally applies the routing rules and the
-	// capability adapter.
-	ModeRoute Mode = "route"
 )
 
 // validModes is used both for enum validation and for building a readable
 // error message.
-var validModes = []Mode{ModeOff, ModeRecord, ModeRoute}
+var validModes = []Mode{ModeOff, ModeRecord}
 
 func (m Mode) valid() bool {
 	for _, v := range validModes {
@@ -28,23 +32,44 @@ func (m Mode) valid() bool {
 	return false
 }
 
-// Level classifies a validation Issue.
+// convMode validates the mode enum.
+func convMode(s string) (Mode, error) {
+	m := Mode(s)
+	if !m.valid() {
+		return "", fmt.Errorf("invalid mode %q (want %q or %q)", s, ModeOff, ModeRecord)
+	}
+	return m, nil
+}
+
+// Level classifies a validation Issue by what it does to the run. The three
+// values are ordered by severity, so a comparison is enough to ask "is this
+// at least an error?".
 type Level int
 
 const (
-	// LevelWarning is reported but does not fail `omni config check`.
+	// LevelWarning is reported and otherwise ignored: it does not fail
+	// `omni config check` and does not stop a launch.
 	LevelWarning Level = iota
-	// LevelError fails `omni config check` (nonzero exit) and, for the two
-	// categories called out in internal-docs/08-configuration.md §Security
-	// (non-loopback proxy.listen, credential-shaped values), also fails Load.
+	// LevelError fails `omni config check` with a nonzero exit and aborts a
+	// launch before the agent starts, but still lets Load return a usable
+	// configuration for `config show` to report.
 	LevelError
+	// LevelFatal additionally refuses to hand back a usable configuration
+	// at all: Load and Override both return an error. Reserved for the one
+	// category internal-docs/08-configuration.md §Security calls out — a
+	// credential-shaped value anywhere in config.
+	LevelFatal
 )
 
 func (l Level) String() string {
-	if l == LevelError {
+	switch l {
+	case LevelFatal:
+		return "fatal"
+	case LevelError:
 		return "error"
+	default:
+		return "warning"
 	}
-	return "warning"
 }
 
 // Issue is a single problem found while loading or validating config.
@@ -59,10 +84,6 @@ type Issue struct {
 	// flag)".
 	Source string
 	Level  Level
-	// Fatal marks the two Load-time hard-stop categories: non-loopback
-	// proxy.listen and credential-shaped values anywhere in config. Load
-	// refuses to hand back a usable *Effective when any Issue has Fatal set.
-	Fatal bool
 }
 
 func (i Issue) String() string {
@@ -88,16 +109,14 @@ type Effective struct {
 	// Agent is the agent name this configuration was resolved for.
 	Agent string
 
-	Mode       Value[Mode]
-	AllTraffic Value[bool]
+	Mode Value[Mode]
+	// Redact strips credential headers (Authorization, x-api-key,
+	// *-api-key) from recorded traffic. Only meaningful when Mode records.
+	Redact Value[bool]
 	// Binary overrides the agent's profile.Binary when V is non-empty.
 	Binary Value[string]
 	// Upstream overrides the agent's profile.Upstream when V is non-empty.
 	Upstream Value[string]
-
-	Record RecordEffective
-	Adapt  AdaptEffective
-	Proxy  ProxyEffective
 
 	// Routes is the ordered routing rule list, first match wins. Per-agent.
 	// See Resolve to pair it with Backends.
@@ -114,7 +133,7 @@ type Effective struct {
 	Issues []Issue
 
 	// checkIssues holds the problems derived from the fully merged state
-	// (credential scan, loopback, route resolution). Unlike Issues these
+	// (credential scan, route resolution). Unlike Issues these
 	// are recomputed from scratch every time runChecks runs — Override
 	// re-runs it, and a check that appended would report the same problem
 	// once per invocation. See allIssues.
@@ -131,62 +150,19 @@ func (e *Effective) allIssues() []Issue {
 	return append(out, e.checkIssues...)
 }
 
-// RecordEffective is the resolved [record] section.
-type RecordEffective struct {
-	Enabled   Value[bool]
-	Redact    Value[bool]
-	Bodies    Value[bool]
-	Retention Value[Duration]
-}
+// HasFatal reports whether any accumulated Issue is LevelFatal — a
+// credential-shaped value anywhere in config.
+func (e *Effective) HasFatal() bool { return e.hasAtLeast(LevelFatal) }
 
-// AdaptEffective is the resolved [adapt] section.
-type AdaptEffective struct {
-	// OnUnrepresentable is "error" or "warn".
-	OnUnrepresentable Value[string]
-	ReportChanges     Value[bool]
-}
+// HasErrors reports whether any accumulated Issue is LevelError or worse.
+// Used by `omni config check` to decide its exit code.
+func (e *Effective) HasErrors() bool { return e.hasAtLeast(LevelError) }
 
-// ProxyEffective is the resolved [proxy] section. Global only — a single
-// omni process has one proxy, so this is never overridden per-agent.
-type ProxyEffective struct {
-	Listen      Value[string]
-	IdleTimeout Value[Duration]
-}
-
-// HasFatal reports whether any accumulated Issue is Fatal — the two
-// Load-time hard-stop categories (non-loopback proxy.listen, a
-// credential-shaped value anywhere in config).
-func (e *Effective) HasFatal() bool {
+func (e *Effective) hasAtLeast(l Level) bool {
 	for _, is := range e.allIssues() {
-		if is.Fatal {
+		if is.Level >= l {
 			return true
 		}
 	}
 	return false
-}
-
-// HasErrors reports whether any accumulated Issue is at LevelError. Used by
-// `omni config check` to decide its exit code.
-func (e *Effective) HasErrors() bool {
-	for _, is := range e.allIssues() {
-		if is.Level == LevelError {
-			return true
-		}
-	}
-	return false
-}
-
-// RoutingError returns a descriptive error if routing rules are set but the
-// agent's wire style cannot be rewritten (see profile.APIStyle.CanRewrite),
-// or nil otherwise. Callers (cmd/omni) can use this to fail a `route`
-// launch loudly rather than silently no-op the rules, matching
-// internal-docs/09-cli-design.md's example error.
-func (e *Effective) RoutingError(canRewrite bool) error {
-	if canRewrite || len(e.Routes.V) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"cannot apply routing rules for agent %q: model rewriting is not supported for this agent's API style (%s)",
-		e.Agent, e.Routes.Source,
-	)
 }

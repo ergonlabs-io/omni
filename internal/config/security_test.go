@@ -22,7 +22,7 @@ func TestCredentialRejection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			home := testHome(t)
 			testCWD(t)
-			writeTestFile(t, AgentConfigPath(home, "claude"), tc.toml)
+			writeAgentSection(t, home, "claude", tc.toml)
 
 			e, err := LoadFrom(home, "claude")
 			if err == nil {
@@ -33,7 +33,7 @@ func TestCredentialRejection(t *testing.T) {
 			}
 			foundCred := false
 			for _, is := range e.Check() {
-				if is.Fatal && strings.Contains(is.Message, "credential") {
+				if is.Level == LevelFatal && strings.Contains(is.Message, "credential") {
 					foundCred = true
 				}
 			}
@@ -46,7 +46,7 @@ func TestCredentialRejection(t *testing.T) {
 	t.Run("ordinary values are not flagged", func(t *testing.T) {
 		home := testHome(t)
 		testCWD(t)
-		writeTestFile(t, AgentConfigPath(home, "claude"), `
+		writeAgentSection(t, home, "claude", `
 binary = "/Users/me/.local/bin/claude"
 upstream = "https://api.anthropic.com"
 
@@ -64,58 +64,9 @@ model = "claude-sonnet-5"
 	})
 }
 
-// TestProxyListenLoopbackOnly checks that a non-loopback proxy.listen is
-// rejected at Load, not honored, per internal-docs/08-configuration.md
-// §Security.
-func TestProxyListenLoopbackOnly(t *testing.T) {
-	rejected := []string{
-		"0.0.0.0:8080",
-		"8.8.8.8:8080",
-		"[::]:8080",
-		"example.com:8080",
-	}
-	for _, addr := range rejected {
-		t.Run(addr, func(t *testing.T) {
-			home := testHome(t)
-			testCWD(t)
-			writeTestFile(t, GlobalConfigPath(home), `
-[defaults.proxy]
-listen = "`+addr+`"
-`)
-			e, err := LoadFrom(home, "claude")
-			if err == nil {
-				t.Fatalf("Load: expected error for non-loopback listen %q, got nil", addr)
-			}
-			if e == nil || !e.HasFatal() {
-				t.Fatalf("expected a Fatal issue for proxy.listen=%q", addr)
-			}
-		})
-	}
-
-	accepted := []string{
-		"127.0.0.1:0",
-		"127.0.0.1:54321",
-		"localhost:0",
-		"[::1]:0",
-	}
-	for _, addr := range accepted {
-		t.Run(addr, func(t *testing.T) {
-			home := testHome(t)
-			testCWD(t)
-			writeTestFile(t, GlobalConfigPath(home), `
-[defaults.proxy]
-listen = "`+addr+`"
-`)
-			e, err := LoadFrom(home, "claude")
-			if err != nil {
-				t.Fatalf("Load: unexpected error for loopback listen %q: %v (issues: %+v)", addr, err, e.Check())
-			}
-			if e.Proxy.Listen.V != addr {
-				t.Errorf("proxy.listen = %q, want %q", e.Proxy.Listen.V, addr)
-			}
-		})
-	}
-}
+// No config key names a bind address: omni picks loopback on an ephemeral
+// port, and internal/proxy enforces that. See TestNonLoopbackBindRejected
+// and TestLoopbackBindAccepted there.
 
 // TestRoutingCapability checks that routing rules on codex (openai style,
 // cannot rewrite) is flagged as an error naming the limitation, per
@@ -123,7 +74,7 @@ listen = "`+addr+`"
 func TestRoutingCapability(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	writeTestFile(t, AgentConfigPath(home, "codex"), `
+	writeAgentSection(t, home, "codex", `
 [[route]]
 match = "gpt-5"
 model = "gpt-5-mini"
@@ -146,14 +97,5 @@ model = "gpt-5-mini"
 	}
 	if e.HasFatal() {
 		t.Errorf("routing capability mismatch should not be Fatal (does not block Load), got: %+v", e.Check())
-	}
-
-	if err := e.RoutingError(false); err == nil {
-		t.Errorf("RoutingError(false) = nil, want an error naming the limitation")
-	} else if !strings.Contains(err.Error(), "codex") {
-		t.Errorf("RoutingError message = %q, want it to name codex", err.Error())
-	}
-	if err := e.RoutingError(true); err != nil {
-		t.Errorf("RoutingError(true) = %v, want nil", err)
 	}
 }

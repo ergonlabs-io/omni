@@ -26,7 +26,8 @@ import (
 // actually targets it, and launching an agent whose first matching request
 // will 401 is worse than refusing to launch.
 func resolveRouter(eff *config.Effective, p *profile.Profile) (*proxy.Router, error) {
-	if eff.Mode.V != config.ModeRoute || len(eff.Routes.V) == 0 {
+	// Routing is on whenever rules exist, unless the whole proxy is off.
+	if eff.Mode.V == config.ModeOff || len(eff.Routes.V) == 0 {
 		return nil, nil
 	}
 

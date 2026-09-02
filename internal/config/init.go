@@ -13,8 +13,8 @@ var omniConfTemplate []byte
 // dirPerm and homePerm/caPerm implement the exact permissions
 // internal-docs/08-configuration.md §Bootstrap calls for: "~/.omni 0700,
 // ca/ 0700" set explicitly rather than relying on umask. Directories that
-// hold nothing sensitive on their own (agents/, profiles.d/, cache/,
-// sessions/) use the ordinary 0755 — the home directory's 0700 already
+// hold nothing sensitive on their own (profiles.d/, cache/, sessions/)
+// use the ordinary 0755 — the home directory's 0700 already
 // blocks other users from traversing into them at all.
 const (
 	homePerm = 0o700
@@ -28,17 +28,15 @@ const (
 //
 //	~/.omni/
 //	├── omni.conf          (everything: defaults, backends, per-agent)
-//	├── agents/            (empty — optional per-agent drop-ins live here)
 //	├── profiles.d/
 //	├── ca/                (created empty — the CA itself is generated
 //	│                        lazily on first --all-traffic, never here)
 //	├── cache/
 //	└── sessions/
 //
-// Only omni.conf is written. agents/<name>.conf remains a supported, higher
-// precedence layer for anyone who wants an agent in its own file, but
-// scaffolding one per agent made the common case — a single setting, in one
-// place — look like it needed three files to express.
+// Only omni.conf is written, and it is the only file omni reads for
+// defaults, backends, and per-agent settings — a single setting lives in a
+// single place.
 //
 // Init is idempotent: it never overwrites or removes an existing file or
 // directory. It returns the absolute paths of everything it newly created,
@@ -83,7 +81,6 @@ func Init(home string) ([]string, error) {
 	// spec. (An existing world-readable ~/.omni is left as the user made
 	// it; Init does not silently rewrite permissions out from under them.)
 
-	agentsDir := filepath.Join(home, "agents")
 	profilesDir := filepath.Join(home, "profiles.d")
 	caDir := filepath.Join(home, "ca")
 	cacheDir := filepath.Join(home, "cache")
@@ -93,7 +90,6 @@ func Init(home string) ([]string, error) {
 		path string
 		perm os.FileMode
 	}{
-		{agentsDir, dirPerm},
 		{profilesDir, dirPerm},
 		{caDir, caPerm}, // 0700 — will hold ca.pem / ca-key.pem once generated lazily
 		{cacheDir, dirPerm},

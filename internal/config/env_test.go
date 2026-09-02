@@ -6,37 +6,30 @@ import (
 )
 
 // TestEnvVarNesting exercises the OMNI_* / "__" nesting rules from
-// internal-docs/08-configuration.md §Environment variables, including the
-// distinction between "__" (nesting) and "_" (part of a key's own name,
-// e.g. all_traffic / idle_timeout / on_unrepresentable).
+// internal-docs/08-configuration.md §Environment variables. No key in the
+// current schema has an underscore in its own name, so "__" is exercised
+// here only by the OMNI_AGENTS__<NAME>__ prefix — which is all the rule has
+// left to disambiguate.
 func TestEnvVarNesting(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
 
-	t.Setenv("OMNI_RECORD__REDACT", "false")
-	t.Setenv("OMNI_ALL_TRAFFIC", "true")
-	t.Setenv("OMNI_PROXY__IDLE_TIMEOUT", "5m")
-	t.Setenv("OMNI_ADAPT__ON_UNREPRESENTABLE", "warn")
+	t.Setenv("OMNI_MODE", "off")
+	t.Setenv("OMNI_REDACT", "false")
 	t.Setenv("OMNI_AGENTS__CLAUDE__BINARY", "/opt/claude")
 
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
 		t.Fatalf("Load: %v (issues: %+v)", err, e.Check())
 	}
-	if e.Record.Redact.V != false {
-		t.Errorf("record.redact = %v, want false", e.Record.Redact.V)
+	if e.Mode.V != ModeOff {
+		t.Errorf("mode = %v, want off", e.Mode.V)
 	}
-	if e.Record.Redact.Source != "$OMNI_RECORD__REDACT" {
-		t.Errorf("record.redact source = %q", e.Record.Redact.Source)
+	if e.Redact.V != false {
+		t.Errorf("redact = %v, want false", e.Redact.V)
 	}
-	if e.AllTraffic.V != true {
-		t.Errorf("all_traffic = %v, want true", e.AllTraffic.V)
-	}
-	if got := e.Proxy.IdleTimeout.V.String(); got != "5m0s" {
-		t.Errorf("proxy.idle_timeout = %q, want 5m0s", got)
-	}
-	if e.Adapt.OnUnrepresentable.V != "warn" {
-		t.Errorf("adapt.on_unrepresentable = %q, want warn", e.Adapt.OnUnrepresentable.V)
+	if e.Redact.Source != "$OMNI_REDACT" {
+		t.Errorf("redact source = %q", e.Redact.Source)
 	}
 	if e.Binary.V != "/opt/claude" {
 		t.Errorf("binary = %q, want /opt/claude", e.Binary.V)
@@ -58,7 +51,7 @@ func TestEnvVarNesting(t *testing.T) {
 func TestEnvVarInvalidValue(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	t.Setenv("OMNI_ALL_TRAFFIC", "not-a-bool")
+	t.Setenv("OMNI_REDACT", "not-a-bool")
 
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
@@ -66,16 +59,17 @@ func TestEnvVarInvalidValue(t *testing.T) {
 	}
 	found := false
 	for _, is := range e.Check() {
-		if is.Path == "all_traffic" && is.Level == LevelError {
+		if is.Path == "redact" && is.Level == LevelError {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError issue for OMNI_ALL_TRAFFIC=not-a-bool, got: %+v", e.Check())
+		t.Errorf("expected a LevelError issue for OMNI_REDACT=not-a-bool, got: %+v", e.Check())
 	}
-	// Falls back to the previous value rather than a zero value silently.
-	if e.AllTraffic.V != false || e.AllTraffic.Source != builtinSource {
-		t.Errorf("all_traffic = %+v, want untouched built-in default after a bad env value", e.AllTraffic)
+	// Falls back to the previous value rather than a zero value silently —
+	// redaction in particular must never fail open on a typo.
+	if e.Redact.V != true || e.Redact.Source != builtinSource {
+		t.Errorf("redact = %+v, want untouched built-in default after a bad env value", e.Redact)
 	}
 }
 
@@ -106,7 +100,7 @@ func TestEnvVarRoutesUnsupported(t *testing.T) {
 }
 
 // TestOverrideLayer checks (*Effective).Override, the hook cmd/omni uses
-// for layer 7 (CLI flags), including that it rejects unknown keys and
+// for layer 6 (CLI flags), including that it rejects unknown keys and
 // still enforces Fatal checks (e.g. a credential-shaped override value).
 func TestOverrideLayer(t *testing.T) {
 	home := testHome(t)
@@ -116,18 +110,14 @@ func TestOverrideLayer(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if err := e.Override(map[string]string{"mode": "route"}, "(cli flag)"); err != nil {
+	if err := e.Override(map[string]string{"mode": "off"}, "(cli flag)"); err != nil {
 		t.Fatalf("Override: %v", err)
 	}
-	if e.Mode.V != ModeRoute || e.Mode.Source != "(cli flag)" {
-		t.Fatalf("mode = %+v, want route/(cli flag)", e.Mode)
+	if e.Mode.V != ModeOff || e.Mode.Source != "(cli flag)" {
+		t.Fatalf("mode = %+v, want off/(cli flag)", e.Mode)
 	}
 
 	if err := e.Override(map[string]string{"not_a_real_key": "x"}, "(cli flag)"); err == nil {
 		t.Errorf("Override: expected error for unknown key")
-	}
-
-	if err := e.Override(map[string]string{"proxy.listen": "0.0.0.0:1"}, "(cli flag)"); err == nil {
-		t.Errorf("Override: expected error for non-loopback proxy.listen")
 	}
 }

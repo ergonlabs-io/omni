@@ -1,59 +1,55 @@
 package config
 
-import "strings"
+import (
+	"maps"
+	"slices"
+	"strings"
 
-// knownDefaultsPaths are the recognized dotted keys under omni.conf's
-// [defaults] table (excluding the nested [agents.*] tables, which are
-// validated against knownAgentPaths instead).
+	"github.com/ergonlabs-io/omni/internal/suggest"
+)
+
+// knownDefaultsPaths and knownAgentPaths are the recognized keys for
+// omni.conf's [defaults] table and for an agent-shaped config (an
+// [agents.<name>] table, or a project config's top level).
+//
+// These are hand-maintained, and TestSchemaIsConsistent is what keeps them
+// honest: it reflects over rawDefaults and rawAgent and fails if a key
+// exists on the wire but is missing from these sets, from the environment
+// setters, or from `config show`. Each of those omissions fails silently in
+// production — a key absent here is reported to the user as a typo — so the
+// test, not the reader, is the guarantee.
 var knownDefaultsPaths = map[string]bool{
-	"mode":                     true,
-	"all_traffic":              true,
-	"record.enabled":           true,
-	"record.redact":            true,
-	"record.bodies":            true,
-	"record.retention":         true,
-	"adapt.on_unrepresentable": true,
-	"adapt.report_changes":     true,
-	"proxy.listen":             true,
-	"proxy.idle_timeout":       true,
+	"mode":   true,
+	"redact": true,
 }
 
-// knownAgentPaths are the recognized dotted keys for an agent-shaped config:
-// either omni.conf's [agents.<name>] table or an
-// ~/.omni/agents/<name>.conf drop-in. route and env are wildcards — a
-// [[route]] element's keys are validated separately (knownRoutePaths), and
-// anything nested under env is a user-chosen variable name, not schema.
 var knownAgentPaths = map[string]bool{
-	"mode":                     true,
-	"binary":                   true,
-	"upstream":                 true,
-	"adapt.on_unrepresentable": true,
-	"adapt.report_changes":     true,
-	"record.enabled":           true,
-	"record.redact":            true,
-	"record.bodies":            true,
-	"record.retention":         true,
+	"mode":     true,
+	"redact":   true,
+	"binary":   true,
+	"upstream": true,
 }
 
+// knownAgentWildcards are the agent-shaped keys whose leaves are not
+// schema: a [[route]] element's keys are validated separately against
+// knownRoutePaths, and anything under env is a user-chosen variable name.
 var knownAgentWildcards = []string{"route", "env"}
 
-// projectAllowedPaths is the SECURITY-CRITICAL allowlist for ./.omni.conf
-// (project, repo-local config). Anything not covered here is rejected with
-// a warning, no matter what it's called. See
-// internal-docs/08-configuration.md §Security: a repo-local file must never
-// be able to set `binary` (arbitrary code execution on cd), `upstream`,
-// `all_traffic`, `record.redact`, or `proxy.listen`.
+// projectAllowedPath is the SECURITY-CRITICAL allowlist for ./.omni.conf
+// (project, repo-local config): a repo you cd into and did not write must
+// never be able to set `binary` (arbitrary code execution on cd),
+// `upstream`, `all_traffic`, `record.redact`, or `proxy.listen`. The
+// See internal-docs/08-configuration.md §Security, and read
+// loadProjectConfig before adding anything here. TestProjectScopeIsMinimal
+// pins the list.
+//
+// route is allowed here and is not in the schema table; it is admitted in
+// its rename form only, which assignProjectRoutes enforces.
 func projectAllowedPath(path string) bool {
-	switch {
-	case path == "mode":
+	if path == "route" || strings.HasPrefix(path, "route.") {
 		return true
-	case path == "route" || strings.HasPrefix(path, "route."):
-		return true
-	case path == "record.bodies":
-		return true
-	default:
-		return false
 	}
+	return path == "mode"
 }
 
 // knownPath reports whether dotted path p is recognized against exact,
@@ -72,49 +68,8 @@ func knownPath(p string, exact map[string]bool, wildcards []string) bool {
 	return false
 }
 
-// suggest returns the known path(s) within Levenshtein distance 2 of got,
-// for "did you mean" messages. known is the same map passed to knownPath.
-func suggest(got string, known map[string]bool) []string {
-	var out []string
-	for k := range known {
-		if levenshtein(got, k) <= 2 {
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
-// levenshtein computes edit distance between a and b. A small local copy —
-// internal/profile has an equivalent but unexported implementation, and
-// duplicating ~20 lines is cheaper than coupling config's validation to
-// profile's internals.
-func levenshtein(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	prev := make([]int, len(rb)+1)
-	cur := make([]int, len(rb)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		cur[0] = i
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			del := prev[j] + 1
-			ins := cur[j-1] + 1
-			sub := prev[j-1] + cost
-			m := del
-			if ins < m {
-				m = ins
-			}
-			if sub < m {
-				m = sub
-			}
-			cur[j] = m
-		}
-		prev, cur = cur, prev
-	}
-	return prev[len(rb)]
+// suggestNear returns the known path(s) close enough to got to be worth
+// offering as a correction. known is the same map passed to knownPath.
+func suggestNear(got string, known map[string]bool) []string {
+	return suggest.Near(got, slices.Sorted(maps.Keys(known)))
 }

@@ -1,6 +1,11 @@
 package config
 
-import "github.com/BurntSushi/toml"
+import (
+	"maps"
+	"slices"
+
+	"github.com/BurntSushi/toml"
+)
 
 // loadGlobal reads and validates ~/.omni/omni.conf. A missing file is not
 // an error — callers check os.IsNotExist and treat the layer as absent.
@@ -29,7 +34,8 @@ func loadGlobal(path string) (rawGlobal, *fileLoad, error) {
 // [backends.<name>], keys must be in knownBackendPaths.
 func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 	var issues []Issue
-	for topKey, topVal := range generic {
+	for _, topKey := range slices.Sorted(maps.Keys(generic)) {
+		topVal := generic[topKey]
 		switch topKey {
 		case "defaults":
 			sub, ok := topVal.(map[string]interface{})
@@ -38,7 +44,7 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 			}
 			leaves := map[string]interface{}{}
 			flattenLeaves("", sub, leaves)
-			for p := range leaves {
+			for _, p := range sortedLeaves(leaves) {
 				if !knownPath(p, knownDefaultsPaths, nil) {
 					full := "defaults." + p
 					issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownDefaultsPaths))
@@ -49,14 +55,16 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 			if !ok {
 				continue
 			}
-			for agentName, agentVal := range agentsMap {
+			for _, agentName := range slices.Sorted(maps.Keys(agentsMap)) {
+				agentVal := agentsMap[agentName]
 				sub, ok := agentVal.(map[string]interface{})
 				if !ok {
 					continue
 				}
 				leaves := map[string]interface{}{}
 				flattenLeaves("", sub, leaves)
-				for p, v := range leaves {
+				for _, p := range sortedLeaves(leaves) {
+					v := leaves[p]
 					full := "agents." + agentName + "." + p
 					if p == "route" {
 						issues = append(issues, checkRouteKeys(v, full, fl.src(full))...)
@@ -72,14 +80,15 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 			if !ok {
 				continue
 			}
-			for backendName, backendVal := range backendsMap {
+			for _, backendName := range slices.Sorted(maps.Keys(backendsMap)) {
+				backendVal := backendsMap[backendName]
 				sub, ok := backendVal.(map[string]interface{})
 				if !ok {
 					continue
 				}
 				leaves := map[string]interface{}{}
 				flattenLeaves("", sub, leaves)
-				for p := range leaves {
+				for _, p := range sortedLeaves(leaves) {
 					if !knownPath(p, knownBackendPaths, knownBackendWildcards) {
 						full := "backends." + backendName + "." + p
 						issues = append(issues, unknownKeyIssue(full, p, fl.src(full), knownBackendPaths))
@@ -92,34 +101,4 @@ func checkGlobalKeys(generic map[string]interface{}, fl *fileLoad) []Issue {
 		}
 	}
 	return issues
-}
-
-// loadAgentFile reads and validates an ~/.omni/agents/<name>.conf drop-in.
-// Its shape is the same as an inline [agents.<name>] table, but flat (no
-// wrapper table) — see internal-docs/08-configuration.md §Per-agent config.
-func loadAgentFile(path string) (rawAgent, *fileLoad, error) {
-	fl, err := readFile(path)
-	if err != nil {
-		return rawAgent{}, nil, err
-	}
-	var r rawAgent
-	if _, err := toml.Decode(fl.content, &r); err != nil {
-		return rawAgent{}, fl, err
-	}
-	generic, err := decodeGeneric(fl)
-	if err != nil {
-		return rawAgent{}, fl, err
-	}
-	leaves := map[string]interface{}{}
-	flattenLeaves("", generic, leaves)
-	for p, v := range leaves {
-		if p == "route" {
-			fl.issues = append(fl.issues, checkRouteKeys(v, p, fl.src(p))...)
-			continue
-		}
-		if !knownPath(p, knownAgentPaths, knownAgentWildcards) {
-			fl.issues = append(fl.issues, unknownKeyIssue(p, p, fl.src(p), knownAgentPaths))
-		}
-	}
-	return r, fl, nil
 }

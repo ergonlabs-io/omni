@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/ergonlabs-io/omni/internal/suggest"
 )
 
 // backendNameRe constrains backend names to a boring, shell-safe charset.
@@ -231,8 +233,7 @@ func validateBaseURL(path, raw, source string) *Issue {
 				raw,
 			),
 			Source: source,
-			Level:  LevelError,
-			Fatal:  true,
+			Level:  LevelFatal,
 		}
 	default:
 		return &Issue{
@@ -245,16 +246,10 @@ func validateBaseURL(path, raw, source string) *Issue {
 }
 
 func didYouMeanBackend(got string, declared map[string]Backend) string {
-	var near []string
-	for name := range declared {
-		if levenshtein(got, name) <= 2 {
-			near = append(near, name)
-		}
-	}
+	near := suggest.Near(got, sortedBackendNames(declared))
 	if len(near) == 0 {
 		return ""
 	}
-	sort.Strings(near)
 	return " (did you mean: " + strings.Join(near, ", ") + "?)"
 }
 

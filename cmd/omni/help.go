@@ -45,20 +45,24 @@ AGENTS
 SUBCOMMANDS
     init         create or repair ~/.omni
     config       show, check, and locate configuration
+    run          run an agent (unambiguous form)
+
+  Reserved, not yet implemented — these exit with an error:
     ca           manage the Tier 2 certificate authority
     sessions     list and prune recorded sessions
     completions  generate shell completions
-    run          run an agent (unambiguous form)
 
 FLAGS
-    --mode <off|record|route>   interception mode (default: from config)
+    --mode <off|record>         interception mode (default: from config)
+    --record-only               shorthand for --mode record
     --model-map <from=to>       one-off model rewrite; repeatable
-    --all-traffic               Tier 2 full MITM (requires CA)
     --dry-run                   print what would happen; launch nothing
     -v, --verbose               diagnostics to stderr; repeatable
-    -q, --quiet                 suppress warnings
-    --no-color                  disable color (also honors NO_COLOR)
     --version                   version, commit, build date
+
+  Reserved, not yet implemented:
+    --all-traffic               Tier 2 full MITM; errors on agents that
+                                cannot support it, otherwise does nothing
 
 Everything after <agent> is passed through untouched. ` + "`omni claude --help`" + `
 shows Claude Code's help; use ` + "`omni --help`" + ` for this.

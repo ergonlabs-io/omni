@@ -3,38 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
-	"time"
 )
-
-func TestParseDuration(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    time.Duration
-		wantErr bool
-	}{
-		{"14d", 14 * 24 * time.Hour, false},
-		{"10m", 10 * time.Minute, false},
-		{"1d12h", 36 * time.Hour, false},
-		{"90s", 90 * time.Second, false},
-		{"not-a-duration", 0, true},
-	}
-	for _, tc := range cases {
-		got, err := ParseDuration(tc.in)
-		if tc.wantErr {
-			if err == nil {
-				t.Errorf("ParseDuration(%q) = %v, want error", tc.in, got)
-			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("ParseDuration(%q): unexpected error: %v", tc.in, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("ParseDuration(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}
 
 func TestUnknownKeyGlobal(t *testing.T) {
 	home := testHome(t)
@@ -61,10 +30,10 @@ mdoe = "route"
 	}
 }
 
-func TestUnknownKeyAgentFile(t *testing.T) {
+func TestUnknownKeyAgentSection(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	writeTestFile(t, AgentConfigPath(home, "claude"), `
+	writeAgentSection(t, home, "claude", `
 bianry = "/usr/bin/claude"
 `)
 	e, err := LoadFrom(home, "claude")
@@ -85,12 +54,15 @@ bianry = "/usr/bin/claude"
 	}
 }
 
-func TestDurationParseErrorIsNonFatal(t *testing.T) {
+// TestBadValueIsNonFatal checks that an invalid value is a LevelError that
+// `omni config check` reports, not a Fatal that refuses to load — and that
+// the key keeps its lower-layer value rather than silently becoming a zero.
+func TestBadValueIsNonFatal(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
 	writeTestFile(t, GlobalConfigPath(home), `
-[defaults.record]
-retention = "not-a-duration"
+[defaults]
+mode = "not-a-mode"
 `)
 	e, err := LoadFrom(home, "claude")
 	if err != nil {
@@ -98,24 +70,24 @@ retention = "not-a-duration"
 	}
 	found := false
 	for _, is := range e.Check() {
-		if is.Path == "record.retention" && is.Level == LevelError {
+		if is.Path == "mode" && is.Level == LevelError {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError issue for a bad duration, got: %+v", e.Check())
+		t.Errorf("expected a LevelError issue for a bad mode, got: %+v", e.Check())
 	}
-	// Falls back to the built-in default rather than a zero duration.
-	if e.Record.Retention.Source != builtinSource {
-		t.Errorf("record.retention source = %q, want untouched built-in default", e.Record.Retention.Source)
+	// Falls back to the built-in default rather than an empty mode.
+	if e.Mode.V != ModeRecord || e.Mode.Source != builtinSource {
+		t.Errorf("mode = %+v, want untouched built-in default", e.Mode)
 	}
 }
 
 func TestShowFormatsProvenance(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
-	writeTestFile(t, AgentConfigPath(home, "claude"), `
-mode = "route"
+	writeAgentSection(t, home, "claude", `
+mode = "off"
 
 [[route]]
 match = "claude-opus-5"
@@ -126,10 +98,10 @@ model = "claude-sonnet-5"
 		t.Fatalf("Load: %v", err)
 	}
 	out := e.Show()
-	if !strings.Contains(out, `mode`) || !strings.Contains(out, `"route"`) {
-		t.Errorf("Show() missing mode=route:\n%s", out)
+	if !strings.Contains(out, `mode`) || !strings.Contains(out, `"off"`) {
+		t.Errorf("Show() missing mode=off:\n%s", out)
 	}
-	if !strings.Contains(out, "claude.conf") {
+	if !strings.Contains(out, "omni.conf") {
 		t.Errorf("Show() missing file provenance:\n%s", out)
 	}
 	if !strings.Contains(out, "(built-in default)") {

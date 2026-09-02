@@ -15,29 +15,22 @@ type Row struct {
 	Source string
 }
 
-// Rows renders every effective value as a Row, in a stable, readable order.
-// Unset optional fields (binary/upstream overrides, no routes, no
-// backends, an empty env) are omitted rather than shown as empty strings.
+// Rows renders every effective value as a Row, in a stable, readable
+// order: the scalar schema in the order fields declares it, then backends,
+// routes, and env. Unset optional fields (the binary/upstream overrides, no
+// routes, no backends, an empty env) are omitted rather than shown empty.
 func (e *Effective) Rows() []Row {
 	var rows []Row
 	add := func(path, val, source string) { rows = append(rows, Row{path, val, source}) }
 
 	add("mode", fmt.Sprintf("%q", string(e.Mode.V)), e.Mode.Source)
-	add("all_traffic", fmt.Sprintf("%v", e.AllTraffic.V), e.AllTraffic.Source)
+	add("redact", fmt.Sprintf("%v", e.Redact.V), e.Redact.Source)
 	if e.Binary.V != "" {
 		add("binary", fmt.Sprintf("%q", e.Binary.V), e.Binary.Source)
 	}
 	if e.Upstream.V != "" {
 		add("upstream", fmt.Sprintf("%q", e.Upstream.V), e.Upstream.Source)
 	}
-	add("record.enabled", fmt.Sprintf("%v", e.Record.Enabled.V), e.Record.Enabled.Source)
-	add("record.redact", fmt.Sprintf("%v", e.Record.Redact.V), e.Record.Redact.Source)
-	add("record.bodies", fmt.Sprintf("%v", e.Record.Bodies.V), e.Record.Bodies.Source)
-	add("record.retention", fmt.Sprintf("%q", e.Record.Retention.V.String()), e.Record.Retention.Source)
-	add("adapt.on_unrepresentable", fmt.Sprintf("%q", e.Adapt.OnUnrepresentable.V), e.Adapt.OnUnrepresentable.Source)
-	add("adapt.report_changes", fmt.Sprintf("%v", e.Adapt.ReportChanges.V), e.Adapt.ReportChanges.Source)
-	add("proxy.listen", fmt.Sprintf("%q", e.Proxy.Listen.V), e.Proxy.Listen.Source)
-	add("proxy.idle_timeout", fmt.Sprintf("%q", e.Proxy.IdleTimeout.V.String()), e.Proxy.IdleTimeout.Source)
 	for _, name := range sortedBackendNames(e.Backends.V) {
 		b := e.Backends.V[name]
 		add("backends."+name, fmt.Sprintf("%s (%s, $%s)", b.BaseURL, b.APIStyle, b.APIKeyEnv), b.Source)
@@ -83,15 +76,6 @@ func formatRule(r Rule) string {
 	default:
 		return fmt.Sprintf("%s → %s", r.Match, r.Model)
 	}
-}
-
-func formatArrowMap(m map[string]string) string {
-	keys := sortedKeys(m)
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = fmt.Sprintf("%s → %s", k, m[k])
-	}
-	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 func formatKVMap(m map[string]string) string {

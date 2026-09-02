@@ -75,9 +75,9 @@ func (r ResolvedRule) String() string {
 // A layer that declares any rules replaces the list wholesale rather than
 // appending to it. Rules are ordered and first-match-wins, so a merged list
 // would need a defined cross-layer order, and there is no ordering between
-// "the rule you wrote in omni.conf" and "the rule you wrote in
-// agents/claude.conf" that a reader could predict. Replacing keeps the list
-// you are looking at the list that runs.
+// "the rule you wrote in ~/.omni/omni.conf" and "the rule you wrote in this
+// repo's ./.omni.conf" that a reader could predict. Replacing keeps the
+// list you are looking at the list that runs.
 func applyRoutes(e *Effective, raw []rawRoute, loc locator, issues *[]Issue) {
 	if len(raw) == 0 {
 		return

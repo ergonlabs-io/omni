@@ -1,46 +1,31 @@
 # omni.conf — omni configuration (TOML syntax)
 #
-# This is the only file omni needs. Everything is in here: global defaults,
-# the backends traffic can be routed to, and per-agent overrides.
+# This is the only file omni needs: global defaults, the backends traffic can
+# be routed to, and per-agent overrides.
 #
-# If you prefer to split an agent out, ~/.omni/agents/<agent>.conf still
-# works and wins over the [agents.<agent>] section below. `omni config show`
-# reports which file and line won for every value.
+# A repo-local ./.omni.conf can override `mode` and `route` for one project,
+# and OMNI_* environment variables override both. `omni config show` reports
+# which file and line won for every value.
 
 [defaults]
-# off | record | route
-#   off     passthrough, no proxy involvement beyond forwarding
-#   record  capture all traffic to ~/.omni/sessions (default)
-#   route   record + apply the routing rules and the capability adapter
+# off | record
+#   off     passthrough — forward, record nothing, apply no rules
+#   record  capture the session to ~/.omni/sessions (default)
+# Routing needs no mode of its own: the rules below apply whenever you have
+# written any and mode is not "off".
 mode = "record"
 
-# Tier 2 full MITM: intercept every TLS connection the agent makes, not just
-# its LLM calls. Requires a locally generated CA that the agent's runtime
-# trusts. Not implemented yet.
-all_traffic = false
-
-[defaults.record]
-enabled   = true
-redact    = true      # strip Authorization / x-api-key / *-api-key
-bodies    = true      # request+response bodies, not just metadata
-retention = "14d"     # prune sessions older than this on startup
-
-[defaults.adapt]
-# What to do when the source request uses a feature the target model cannot
-# express. "error" is the default and the safe choice: silently dropping a
-# thinking budget or a tool definition changes what the model does.
-on_unrepresentable = "error"   # error | warn
-report_changes     = true      # log every mutation the adapter makes
-
-[defaults.proxy]
-listen       = "127.0.0.1:0"   # ephemeral. Loopback only — do not change.
-idle_timeout = "10m"           # must exceed a plausible tool-loop duration
+# Strip Authorization / x-api-key / *-api-key from recorded traffic.
+# Recordings still contain request and response bodies, which routinely hold
+# source code — see the note in `omni help`.
+redact = true
 
 
 # --- backends --------------------------------------------------------------
 # Places a routing rule can send traffic instead of the agent's own provider.
-# Backends are global (an endpoint is an endpoint); rules are per-agent,
-# because "claude-opus-5" is meaningless to Codex.
+# Only needed if you write routing rules. Backends are global (an endpoint is an
+# endpoint); rules are per-agent, because "claude-opus-5" is meaningless to
+# Codex.
 #
 # omni routes; it does not translate. api_style must match the agent's own,
 # so point base_url at a native endpoint or at a translating gateway — a
@@ -59,16 +44,23 @@ idle_timeout = "10m"           # must exceed a plausible tool-loop duration
 # [backends.openrouter.headers]
 # HTTP-Referer = "https://github.com/ergonlabs-io/omni"
 # X-Title      = "omni"
-#
-# [backends.local]
-# base_url  = "http://127.0.0.1:11434/v1"
-# api_style = "openai"                        # needs a translating gateway
-# model     = "qwen2.5-coder:32b"
 
 
-# --- per-agent ---------------------------------------------------------------
+# --- per-agent -------------------------------------------------------------
+# Anything in [defaults] can be set per agent here, plus `binary`, `upstream`,
+# routing rules, and extra child environment.
 [agents.claude]
-# mode = "route"
+# mode   = "off"
+# redact = false
+
+# Override the launched executable, or the endpoint it is pointed at.
+# binary   = "/Users/me/.local/bin/claude"
+# upstream = "https://api.anthropic.com"
+
+# Extra environment for the child process. Never overrides omni's own
+# steering variables (ANTHROPIC_BASE_URL and friends) — those always win.
+# [agents.claude.env]
+# ANTHROPIC_LOG = "debug"
 
 # Routing rules: an ordered list, first match wins, in the order written.
 # `match` is a glob against the model the agent asked for, and nothing else —

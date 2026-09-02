@@ -44,7 +44,6 @@ func runChecks(e *Effective) {
 	// its finding once per call.
 	e.checkIssues = nil
 	scanCredentials(e)
-	checkLoopback(e)
 	checkRoutingCapability(e)
 	checkRoutes(e)
 	checkBackendCredentials(e)
@@ -52,9 +51,10 @@ func runChecks(e *Effective) {
 }
 
 // scanCredentials rejects any string value in the merged config that looks
-// like a credential, wherever it appears. This is Fatal: Load and Override
-// both refuse to hand back a configuration in this state, per
-// internal-docs/08-configuration.md's "No credentials in config. Ever."
+// like a credential, wherever it appears. This is Fatal — the one Fatal
+// category — because Load and Override both refuse to hand back a
+// configuration in this state, per internal-docs/08-configuration.md's
+// "No credentials in config. Ever."
 func scanCredentials(e *Effective) {
 	check := func(path, source, val string) {
 		if val != "" && looksLikeCredential(val) {
@@ -64,14 +64,12 @@ func scanCredentials(e *Effective) {
 					"never put credentials in config; they come from the environment " +
 					"or the agent's own auth",
 				Source: source,
-				Level:  LevelError,
-				Fatal:  true,
+				Level:  LevelFatal,
 			})
 		}
 	}
 	check("binary", e.Binary.Source, e.Binary.V)
 	check("upstream", e.Upstream.Source, e.Upstream.V)
-	check("proxy.listen", e.Proxy.Listen.Source, e.Proxy.Listen.V)
 	for i, r := range e.Routes.V {
 		path := fmt.Sprintf("route[%d]", i)
 		check(path+".match", r.Source, r.Match)
@@ -163,27 +161,6 @@ func checkBackendKeys(e *Effective) {
 			Level:   LevelWarning,
 		})
 	}
-}
-
-// checkLoopback rejects a proxy.listen that does not resolve to loopback.
-// Fatal, per internal-docs/08-configuration.md: "A config that binds
-// elsewhere is rejected at load, not honored."
-func checkLoopback(e *Effective) {
-	addr := e.Proxy.Listen.V
-	if isLoopbackAddr(addr) {
-		return
-	}
-	e.checkIssues = append(e.checkIssues, Issue{
-		Path: "proxy.listen",
-		Message: fmt.Sprintf(
-			"proxy.listen %q is not loopback — must bind 127.0.0.1, ::1, or localhost; "+
-				"a proxy holding live API credentials must not be reachable off-host",
-			addr,
-		),
-		Source: e.Proxy.Listen.Source,
-		Level:  LevelError,
-		Fatal:  true,
-	})
 }
 
 // isLoopbackAddr reports whether addr (a "host:port", bare host, or bare IP)

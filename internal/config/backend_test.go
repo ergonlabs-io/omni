@@ -8,10 +8,8 @@ import (
 
 // backendConf is a minimal omni.conf declaring one Anthropic-native
 // backend and routing haiku to it — the shape this feature exists for.
+// No mode is set: routing is on because rules exist.
 const backendConf = `
-[defaults]
-mode = "route"
-
 [backends.openrouter]
 base_url    = "https://openrouter.ai/api"
 api_key_env = "OPENROUTER_API_KEY"
@@ -360,7 +358,7 @@ backend = "openrouter"
 func TestProjectConfigMayStillRename(t *testing.T) {
 	home := testHome(t)
 	cwd := testCWD(t)
-	writeTestFile(t, filepath.Join(home, "omni.conf"), "[defaults]\nmode = \"route\"\n")
+	writeTestFile(t, filepath.Join(home, "omni.conf"), "[defaults]\nmode = \"record\"\n")
 	writeTestFile(t, filepath.Join(cwd, ".omni.conf"), `
 [[route]]
 match = "claude-opus-5"
@@ -380,7 +378,7 @@ model = "claude-sonnet-5"
 func TestProjectConfigCannotDeclareBackend(t *testing.T) {
 	home := testHome(t)
 	cwd := testCWD(t)
-	writeTestFile(t, filepath.Join(home, "omni.conf"), "[defaults]\nmode = \"route\"\n")
+	writeTestFile(t, filepath.Join(home, "omni.conf"), "[defaults]\nmode = \"record\"\n")
 	writeTestFile(t, filepath.Join(cwd, ".omni.conf"), `
 [backends.evil]
 base_url    = "https://evil.example.com"
@@ -456,30 +454,6 @@ backends = "openrouter"
 `)
 	if is := issueFor(e, "agents.claude.route[0].backends"); is == nil {
 		t.Errorf("want an unknown-key error for a typo'd rule key, got %v", e.Check())
-	}
-}
-
-// A later layer's rule list replaces the earlier one rather than merging:
-// there is no predictable order between two files' lists.
-func TestAgentDropInReplacesRuleList(t *testing.T) {
-	home := testHome(t)
-	testCWD(t)
-	writeTestFile(t, filepath.Join(home, "omni.conf"), `
-[[agents.claude.route]]
-match = "from-omni-conf"
-model = "a"
-`)
-	writeTestFile(t, AgentConfigPath(home, "claude"), `
-[[route]]
-match = "from-drop-in"
-model = "b"
-`)
-	e, err := LoadFrom(home, "claude")
-	if err != nil {
-		t.Fatalf("LoadFrom: %v", err)
-	}
-	if len(e.Routes.V) != 1 || e.Routes.V[0].Match != "from-drop-in" {
-		t.Errorf("rules = %+v, want only the drop-in's", e.Routes.V)
 	}
 }
 

@@ -73,9 +73,9 @@ func runAgent(inv *Invocation) int {
 	if inv.Has("--record-only") {
 		overrides["mode"] = string(config.ModeRecord)
 	}
-	if inv.Has("--all-traffic") {
-		overrides["all_traffic"] = "true"
-	}
+	// --all-traffic sets nothing: Tier 2 full MITM is not implemented, so
+	// there is no config key for it to move. The flag survives only for the
+	// SupportsTier2 rejection above, which is a real check.
 	if len(overrides) > 0 {
 		if err := eff.Override(overrides, "command line"); err != nil {
 			errorf("%v", err)
@@ -93,15 +93,10 @@ func runAgent(inv *Invocation) int {
 		}
 	}
 
-	// --model-map is layer 7 for routing: each flag becomes a rule ahead of
+	// --model-map is layer 6 for routing: each flag becomes a rule ahead of
 	// the file-configured ones, so a one-off rewrite wins over config
 	// without the user having to edit anything.
 	if err := applyModelMapFlags(eff, inv.All("--model-map")); err != nil {
-		errorf("%v", err)
-		return exitUsage
-	}
-
-	if err := eff.RoutingError(p.APIStyle.CanRewrite()); err != nil {
 		errorf("%v", err)
 		return exitUsage
 	}
