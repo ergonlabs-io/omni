@@ -141,12 +141,22 @@ func runInit() int {
 	}
 	if len(created) == 0 {
 		fmt.Fprintf(os.Stdout, "%s already initialized; nothing to do\n", home)
-		return exitOK
 	}
 	for _, path := range created {
 		fmt.Fprintf(os.Stdout, "created %s\n", path)
 	}
+	// Init does not tighten a directory that already existed, so say so
+	// rather than leave a loose home looking like a successful bootstrap.
+	warnPermissions(home)
 	return exitOK
+}
+
+// warnPermissions prints any permission problems in the omni home. Warnings
+// only: they never change the exit code, and never stop a launch.
+func warnPermissions(home string) {
+	for _, w := range config.PermissionWarnings(home) {
+		fmt.Fprintf(os.Stderr, "omni: warning: %s\n", w)
+	}
 }
 
 func runConfig(inv *Invocation) int {
@@ -188,6 +198,9 @@ func runConfig(inv *Invocation) int {
 		if err != nil {
 			errorf("%v", err)
 			return exitConfig
+		}
+		if home, herr := config.Home(); herr == nil {
+			warnPermissions(home)
 		}
 		issues := eff.Check()
 		if len(issues) == 0 {
