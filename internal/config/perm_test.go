@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestInitCreatesPrivateDirs pins the modes on every directory whose
-// contents or listing is sensitive. sessions/ is in this list deliberately:
+// TestInitCreatesPrivateDirs pins the modes on every directory Init creates
+// whose contents or listing is sensitive. sessions/ is here deliberately:
 // its listing alone reveals when you ran which agent, and it must defend
 // itself rather than rely on the home directory above it — which Init
 // cannot tighten if it already existed.
@@ -21,7 +21,7 @@ func TestInitCreatesPrivateDirs(t *testing.T) {
 	if _, err := Init(home); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	for _, p := range []string{home, filepath.Join(home, "ca"), filepath.Join(home, "sessions")} {
+	for _, p := range []string{home, filepath.Join(home, "sessions")} {
 		fi, err := os.Stat(p)
 		if err != nil {
 			t.Errorf("stat %s: %v", p, err)

@@ -29,8 +29,6 @@ func TestInitCreatesTree(t *testing.T) {
 
 	wantDirs := []string{
 		filepath.Join(home, "profiles.d"),
-		filepath.Join(home, "ca"),
-		filepath.Join(home, "cache"),
 		filepath.Join(home, "sessions"),
 	}
 	for _, d := range wantDirs {
@@ -44,15 +42,14 @@ func TestInitCreatesTree(t *testing.T) {
 		}
 	}
 
-	// The CA cert/key themselves must NOT be generated at init — only the
-	// directory. Tier 2 CA generation is lazy, on first --all-traffic.
-	caDir := filepath.Join(home, "ca")
-	entries, err := os.ReadDir(caDir)
-	if err != nil {
-		t.Fatalf("read ca dir: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("ca/ should be empty after Init, got: %v", entries)
+	// Nothing is created for a feature that does not exist. cache/ was for a
+	// Models API capability cache and ca/ for Tier 2's certificate
+	// authority; no code read or wrote either. They return with the code
+	// that needs them.
+	for _, d := range []string{"ca", "cache"} {
+		if _, err := os.Stat(filepath.Join(home, d)); !os.IsNotExist(err) {
+			t.Errorf("%s/ was created, but nothing uses it", d)
+		}
 	}
 
 	if runtime.GOOS != "windows" {
@@ -61,9 +58,9 @@ func TestInitCreatesTree(t *testing.T) {
 				t.Errorf("home perm = %o, want %o", perm, privatePerm)
 			}
 		}
-		if fi, err := os.Stat(caDir); err == nil {
+		if fi, err := os.Stat(filepath.Join(home, "sessions")); err == nil {
 			if perm := fi.Mode().Perm(); perm != privatePerm {
-				t.Errorf("ca/ perm = %o, want %o", perm, privatePerm)
+				t.Errorf("sessions/ perm = %o, want %o", perm, privatePerm)
 			}
 		}
 	}
