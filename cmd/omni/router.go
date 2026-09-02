@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/ergonlabs-io/omni/internal/config"
@@ -13,7 +12,7 @@ import (
 
 // resolveRouter turns the effective config's routing rules and backends
 // into a proxy.Router, reading each targeted backend's credential from the
-// environment.
+// environment or from ~/.omni/credentials.
 //
 // It returns (nil, nil) when there is nothing to route — either mode is not
 // "route", or the rule list is empty. Routing is deliberately gated on mode
@@ -54,7 +53,7 @@ func resolveRouter(eff *config.Effective, p *profile.Profile) (*proxy.Router, er
 			b, ok := backends[r.Backend.Name]
 			if !ok {
 				var err error
-				b, err = buildBackend(*r.Backend, upstream)
+				b, err = buildBackend(*r.Backend, upstream, eff)
 				if err != nil {
 					return nil, err
 				}
@@ -70,7 +69,14 @@ func resolveRouter(eff *config.Effective, p *profile.Profile) (*proxy.Router, er
 // buildBackend resolves one config backend into the form the proxy wants,
 // including the credential decision. agentUpstream is what the agent would
 // have talked to without any routing.
-func buildBackend(b config.Backend, agentUpstream string) (*proxy.Backend, error) {
+//
+// The credential comes from eff.SecretFor, not os.Getenv directly: a key may
+// be exported in the shell or stored in ~/.omni/credentials, and this is the
+// only place that difference is resolved. Note what does *not* happen — the
+// file's contents are never put into omni's own environment, so a key kept
+// there is not inherited by the agent omni launches. Exporting it in your
+// shell hands it to the agent; keeping it in the file does not.
+func buildBackend(b config.Backend, agentUpstream string, eff *config.Effective) (*proxy.Backend, error) {
 	u, err := url.Parse(b.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("backends.%s.base_url %q: %w", b.Name, b.BaseURL, err)
@@ -79,11 +85,13 @@ func buildBackend(b config.Backend, agentUpstream string) (*proxy.Backend, error
 
 	switch b.Policy(agentUpstream) {
 	case config.AuthSubstitute:
-		key := os.Getenv(b.APIKeyEnv)
-		if key == "" {
+		key, _, ok := eff.SecretFor(b.APIKeyEnv)
+		if !ok {
 			return nil, fmt.Errorf(
-				"backend %q needs $%s, which is not set — export it, or remove the rules targeting %q",
-				b.Name, b.APIKeyEnv, b.Name,
+				"backend %q needs $%s, which is set neither in the environment nor in %s — "+
+					"export it, or add %s=... to that file (chmod 600), or remove the "+
+					"rules targeting %q",
+				b.Name, b.APIKeyEnv, eff.CredentialsPathForMessage(), b.APIKeyEnv, b.Name,
 			)
 		}
 		out.APIKey = key

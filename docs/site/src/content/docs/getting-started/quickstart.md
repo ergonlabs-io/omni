@@ -44,15 +44,16 @@ would launch: /Users/me/.local/bin/claude
 with env:
   ANTHROPIC_BASE_URL=http://127.0.0.1:<ephemeral>
 config:
-  mode                   "record"                 ~/.omni/omni.conf:15
-  redact                 true                     ~/.omni/omni.conf:20
-sessions -> /Users/me/.omni/sessions
+  mode                   "record"                 ~/.omni/omni.conf:16
+  record.enabled         false                    ~/.omni/omni.conf:23
+  redact                 true                     ~/.omni/omni.conf:28
+recording: off — enable with --record, or record.enabled in config
 ```
 
 :::note[Every value here comes from `omni.conf`]
 `omni init` writes one file, and every key in it that would change your
-agent's behavior is commented out — so a fresh install records and forwards,
-and nothing else. Uncomment a key under `[agents.claude]` to override a
+agent's behavior is commented out — so a fresh install forwards traffic and
+nothing else, writing nothing to disk until you ask it to. Uncomment a key under `[agents.claude]` to override a
 global default for `omni claude` only, and `--dry-run` to confirm what is
 actually in effect, including which line set it. The commented
 `[[agents.claude.route]]` block is
@@ -75,13 +76,20 @@ byte. Everything after the agent name is the agent's:
 
 ```sh
 omni claude --resume            # --resume goes to Claude Code
-omni --mode record claude       # --mode is omni's
+omni --record claude            # --record is omni's
 ```
 
 Add `-v` if you want to see omni's own diagnostics (the proxy address, the
 session directory) on stderr. Without it, omni is silent.
 
-## 4. Read the session
+## 4. Record a session and read it
+
+Nothing was written to disk in step 3: recording is off until you ask for it.
+Run it again with `--record`, then look at what it left behind.
+
+```sh
+omni --record claude
+```
 
 ```sh
 ls ~/.omni/sessions
@@ -108,13 +116,18 @@ cat meta.json
 }
 ```
 
-Each exchange is four files, numbered in order:
+Bodies are files, numbered in order; everything about an exchange lives in
+one append-only index:
 
 ```
-001.request.headers.json    method, URL, headers (credentials redacted)
+exchanges.jsonl             headers, status, and timing — two lines per exchange
 001.request.json            the request body, verbatim
-001.response.headers.json   status and response headers
 001.response.sse            the response body — .sse when streaming, .json otherwise
+```
+
+```sh
+# what did the upstream actually return?
+jq -r 'select(.type == "response") | "\(.seq) \(.status) \(.ttfb_ms)ms"' exchanges.jsonl
 ```
 
 `cache_read_input_tokens_total` is the number to watch. It is the direct
@@ -124,16 +137,20 @@ where it collapses is a session that got more expensive. See
 
 ## 5. Turn it off
 
-Recording is on by default. To stop it for one run:
+Recording is already off unless you pass `--record`, so the way to stop
+writing a session is to leave the flag out. To make it the default for one
+agent instead, set `record.enabled = true` under `[agents.claude]` in
+`~/.omni/omni.conf`, and `--no-record` will still turn it off for a single
+run.
+
+To take omni out of the path entirely — no interception, no routing, pure
+forwarding:
 
 ```sh
 omni --mode off claude
 ```
 
-The proxy still runs and still forwards; nothing is written to disk. To
-change the default, edit `mode` in `~/.omni/omni.conf` or
-the `[agents.claude]` section of `~/.omni/omni.conf` — see
-[Configuration file](../../configuration/configuration-file/).
+See [Configuration file](../../configuration/configuration-file/).
 
 ## Where to go next
 

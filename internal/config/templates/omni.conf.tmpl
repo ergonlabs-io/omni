@@ -9,15 +9,22 @@
 
 [defaults]
 # off | record
-#   off     passthrough — forward, record nothing, apply no rules
-#   record  capture the session to ~/.omni/sessions (default)
+#   off     passthrough — forward only, apply no rules, record nothing
+#   record  intercept: apply routing rules, and allow recording (default)
 # Routing needs no mode of its own: the rules below apply whenever you have
 # written any and mode is not "off".
 mode = "record"
 
-# Strip Authorization / x-api-key / *-api-key from recorded traffic.
-# Recordings still contain request and response bodies, which routinely hold
-# source code — see the note in `omni help`.
+# Write each session's traffic to ~/.omni/sessions. OFF by default, and
+# separate from `mode` on purpose: routing is invisible, but a recording holds
+# the prompts your agent sent — which routinely carry source code and secrets
+# out of your working directory — so it is something you turn on, per run with
+# `omni --record <agent>`, or here to make it the default.
+record.enabled = false
+
+# Strip Authorization / x-api-key / *-api-key from recorded traffic. Applies
+# only when recording. Recordings still contain request and response bodies,
+# which redaction does not sanitize — see the note in `omni help`.
 redact = true
 
 
@@ -31,9 +38,18 @@ redact = true
 # so point base_url at a native endpoint or at a translating gateway — a
 # mismatch is rejected at load rather than forwarded and hoped over.
 #
-# The credential is named, never written here: omni reads api_key_env from
-# the environment at launch, and a key pasted into this file is refused.
-# Omit api_key_env only for a loopback endpoint that wants no auth.
+# The credential is named, never written here: api_key_env holds a variable
+# name, and a key pasted into this file is refused at load. At launch omni
+# looks that variable up first in its own environment and then in
+# ~/.omni/credentials, a plain NAME=value file that must be mode 0600:
+#
+#   printf 'OPENROUTER_API_KEY=sk-or-v1-...\n' > ~/.omni/credentials
+#   chmod 600 ~/.omni/credentials
+#
+# The difference between the two is who else sees the key. A variable you
+# export is inherited by the agent omni launches; one kept in the
+# credentials file is used by omni alone and never enters the agent's
+# environment. Omit api_key_env only for a loopback endpoint wanting no auth.
 #
 # [backends.openrouter]
 # base_url    = "https://openrouter.ai/api"   # serves /v1/messages natively
@@ -50,8 +66,9 @@ redact = true
 # Anything in [defaults] can be set per agent here, plus `binary`, `upstream`,
 # routing rules, and extra child environment.
 [agents.claude]
-# mode   = "off"
-# redact = false
+# mode           = "off"
+# record.enabled = true
+# redact         = false
 
 # Override the launched executable, or the endpoint it is pointed at.
 # binary   = "/Users/me/.local/bin/claude"

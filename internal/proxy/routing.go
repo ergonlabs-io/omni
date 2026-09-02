@@ -60,6 +60,34 @@ type Router struct {
 	// OnRoute, if set, is called once per rewritten request. cmd/omni uses
 	// it for --verbose diagnostics; it must not write to stdout.
 	OnRoute func(from, to, backend string)
+	// OnRouteFailure, if set, is called when a request this router claimed
+	// comes back with an error status. Like OnRoute it is a --verbose
+	// diagnostic channel and must not write to stdout.
+	//
+	// This exists because omni is the only component that can connect the
+	// two halves of the story: the agent knows it asked for one model and
+	// got a 401, and the backend knows it rejected a credential, but only
+	// omni knows a rule sent the one to the other. Without it a dead key in
+	// a routed backend surfaces as nothing but the agent's own retry loop.
+	OnRouteFailure func(RouteFailure)
+}
+
+// RouteFailure describes a request that a routing rule claimed and that the
+// destination answered with an error status.
+type RouteFailure struct {
+	// From is the model the agent asked for; To is the model actually sent
+	// (the same string when the rule only changed destination).
+	From, To string
+	// Backend names the destination, or is empty when the rule kept the
+	// agent's default upstream.
+	Backend string
+	// Status is the HTTP status the destination returned.
+	Status int
+	// Body is a short, sanitized excerpt of the error body: whitespace
+	// collapsed, non-printables dropped, the backend's own credential
+	// redacted if it was echoed back. Empty when no excerpt could safely be
+	// taken (a streaming or content-encoded response).
+	Body string
 }
 
 // NewRouter builds a Router from an ordered rule list. It returns nil when
@@ -85,17 +113,44 @@ func (rt *Router) lookup(model string) (Rule, bool) {
 	return Rule{}, false
 }
 
-// backendKey is the context key under which a request's chosen backend
-// travels from the routing middleware to the reverse proxy's Rewrite func.
-type backendKeyType struct{}
+// routeKey is the context key under which a claimed request's routing
+// decision travels from the routing middleware to the reverse proxy — to
+// Rewrite, which needs the backend, and to ModifyResponse, which needs the
+// rest to describe a failure.
+//
+// The failure callback rides along in the context rather than being read off
+// the Router because the two ends are not connected: ModifyResponse hangs off
+// the Server, which has no idea a Router exists. The request is the only
+// thing both of them hold.
+type routeKeyType struct{}
 
-var backendKey backendKeyType
+var routeKey routeKeyType
+
+// routeInfo is what a matched rule records about its decision.
+type routeInfo struct {
+	from    string
+	to      string
+	backend *Backend
+	onFail  func(RouteFailure)
+}
+
+// routeFor returns the routing decision made for r, or nil when no rule
+// claimed it.
+func routeFor(r *http.Request) *routeInfo {
+	if r == nil {
+		return nil
+	}
+	ri, _ := r.Context().Value(routeKey).(*routeInfo)
+	return ri
+}
 
 // backendFor returns the backend selected for r, or nil for the default
 // upstream.
 func backendFor(r *http.Request) *Backend {
-	b, _ := r.Context().Value(backendKey).(*Backend)
-	return b
+	if ri := routeFor(r); ri != nil {
+		return ri.backend
+	}
+	return nil
 }
 
 // routableRequest reports whether this request carries an Anthropic
@@ -182,8 +237,18 @@ func RoutingMiddleware(rt *Router) RawMiddleware {
 
 			if rule.Backend != nil {
 				applyBackendAuth(r, rule.Backend)
-				r = r.WithContext(context.WithValue(r.Context(), backendKey, rule.Backend))
 			}
+			// Attached for every matched rule, not only the ones naming a
+			// backend: a pure model rename is still a decision omni made on
+			// the agent's behalf, so a failure that follows it is still worth
+			// attributing. Rewrite reads only the backend field, which stays
+			// nil in that case and leaves the default upstream in place.
+			r = r.WithContext(context.WithValue(r.Context(), routeKey, &routeInfo{
+				from:    model,
+				to:      target,
+				backend: rule.Backend,
+				onFail:  rt.OnRouteFailure,
+			}))
 
 			if rt.OnRoute != nil {
 				name := ""

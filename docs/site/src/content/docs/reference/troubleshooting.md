@@ -104,6 +104,36 @@ intercepted without the flag. See
 Exit `70`. `ca`, `sessions`, and `completions` are accepted names with no
 implementation behind them yet.
 
+## The agent retries in a loop and will not say why
+
+```
+401 User not found. · Retrying in 1s · attempt 4/10
+```
+
+This is the agent's own output, not omni's — no `omni: ` prefix. The agent is
+reporting that *something* rejected its request, but it does not know a
+routing rule sent that request somewhere other than its provider, so it cannot
+tell you which backend said no.
+
+Re-run with `-v` and omni will:
+
+```console
+$ omni -v claude
+omni: route: backend "openrouter" returned 401 for minimax/minimax-m3:free
+  (routed from claude-haiku-4-5): {"error":{"message":"User not found.","code":401}}
+```
+
+A `401` or `403` here almost always means the backend's key is dead or
+revoked rather than missing — a key that is missing entirely stops the launch
+before the agent ever starts. Check it against the provider directly, and if
+it is stale, replace it in `~/.omni/credentials` or in your environment. See
+[when a routed request fails](../../interception/model-routing/#when-a-routed-request-fails)
+for the other statuses.
+
+If no `omni: route:` line appears at all, no rule matched — the request went
+to the agent's normal provider and the failure is between the agent and its
+own account.
+
 ## Nothing is being recorded
 
 Check, in order:

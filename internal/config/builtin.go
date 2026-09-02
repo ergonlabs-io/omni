@@ -10,6 +10,9 @@ func builtinDefaults(agent string) *Effective {
 	e := &Effective{Agent: agent}
 
 	e.Mode = Value[Mode]{ModeRecord, builtinSource}
+	// Recording is opt-in. See Effective.RecordEnabled for why this default
+	// is not symmetric with Mode's.
+	e.RecordEnabled = Value[bool]{false, builtinSource}
 	e.Redact = Value[bool]{true, builtinSource}
 
 	// Binary and Upstream are unset by default: the agent's profile.Profile

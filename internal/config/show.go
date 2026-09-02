@@ -24,6 +24,7 @@ func (e *Effective) Rows() []Row {
 	add := func(path, val, source string) { rows = append(rows, Row{path, val, source}) }
 
 	add("mode", fmt.Sprintf("%q", string(e.Mode.V)), e.Mode.Source)
+	add("record.enabled", fmt.Sprintf("%v", e.RecordEnabled.V), e.RecordEnabled.Source)
 	add("redact", fmt.Sprintf("%v", e.Redact.V), e.Redact.Source)
 	if e.Binary.V != "" {
 		add("binary", fmt.Sprintf("%q", e.Binary.V), e.Binary.Source)

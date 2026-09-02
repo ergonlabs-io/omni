@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 // Mode controls how much omni does to a session's intercepted traffic.
 //
@@ -110,8 +113,16 @@ type Effective struct {
 	Agent string
 
 	Mode Value[Mode]
+	// RecordEnabled turns session recording on. It is orthogonal to Mode
+	// and defaults to OFF: interception and routing are cheap and invisible,
+	// but recording writes prompts — which routinely contain source code and
+	// secrets from the working directory — to ~/.omni/sessions, and that is
+	// not something to start doing to someone by default. Recording still
+	// requires Mode to be something other than ModeOff, since ModeOff is
+	// pure passthrough with no tee to record from.
+	RecordEnabled Value[bool]
 	// Redact strips credential headers (Authorization, x-api-key,
-	// *-api-key) from recorded traffic. Only meaningful when Mode records.
+	// *-api-key) from recorded traffic. Only meaningful when recording.
 	Redact Value[bool]
 	// Binary overrides the agent's profile.Binary when V is non-empty.
 	Binary Value[string]
@@ -138,7 +149,41 @@ type Effective struct {
 	// re-runs it, and a check that appended would report the same problem
 	// once per invocation. See allIssues.
 	checkIssues []Issue
+
+	// creds holds the secrets read from ~/.omni/credentials. It is
+	// deliberately unexported and deliberately not a Value[T]: it is not a
+	// configuration layer, it has no provenance to report, and nothing that
+	// renders an Effective may reach it. Read it through SecretFor.
+	creds Credentials
 }
+
+// SecretFor resolves the credential a backend's api_key_env names, and
+// reports where it came from.
+//
+// The environment wins over the credentials file, matching how every other
+// layer in this package resolves: the file is the stored value, the
+// environment is the deliberate override, and `OPENROUTER_API_KEY=... omni
+// claude` has to be a usable way to try a new key without editing anything.
+//
+// source is suitable for a diagnostic — "$OPENROUTER_API_KEY" or the file's
+// path — and never contains the secret.
+func (e *Effective) SecretFor(envName string) (value, source string, ok bool) {
+	if envName == "" {
+		return "", "", false
+	}
+	if v := os.Getenv(envName); v != "" {
+		return v, "$" + envName, true
+	}
+	if v, found := e.creds.Lookup(envName); found && v != "" {
+		return v, e.creds.Path(), true
+	}
+	return "", "", false
+}
+
+// CredentialsPath returns the path of the credentials file this
+// configuration was loaded against, for use in error messages. Empty for an
+// Effective that was not built by Load.
+func (e *Effective) CredentialsPath() string { return e.creds.Path() }
 
 // allIssues returns the merge-time and derived problems as one slice.
 func (e *Effective) allIssues() []Issue {

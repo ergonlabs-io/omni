@@ -61,6 +61,9 @@ cloning a repository dangerous:
   prompts and your source, redirected to someone else's endpoint.
 - **`redact`** — a repo could turn off credential redaction and have your
   API key written to disk in plaintext.
+- **`record.enabled`** — a repo could switch recording on and have your
+  prompts, and its own source, written to `~/.omni/sessions` without you
+  asking. Deciding to capture your work is your call, not the repository's.
 
 The implementation matches the argument. The project layer does not decode
 into a struct and then check the result; it walks the raw document and only

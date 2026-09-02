@@ -111,6 +111,12 @@ func setRawDefaultsField(d *rawDefaults, path, v string) (known bool, err error)
 			return true, e
 		}
 		d.Redact = &b
+	case "record.enabled":
+		b, e := strconv.ParseBool(v)
+		if e != nil {
+			return true, e
+		}
+		d.Record.Enabled = &b
 	default:
 		return false, nil
 	}
@@ -129,6 +135,12 @@ func setRawAgentField(a *rawAgent, path, v string) (known bool, err error) {
 			return true, e
 		}
 		a.Redact = &b
+	case "record.enabled":
+		b, e := strconv.ParseBool(v)
+		if e != nil {
+			return true, e
+		}
+		a.Record.Enabled = &b
 	case "binary":
 		a.Binary = &v
 	case "upstream":

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 
@@ -143,22 +142,28 @@ func checkBackendCredentials(e *Effective) {
 	}
 }
 
-// checkBackendKeys warns about a declared backend whose api_key_env is not
-// set in the environment. A warning, not an error: a backend can be
-// declared and unused, and only a route that actually targets it needs the
-// credential. cmd/omni promotes this to a hard failure when such a route
-// exists — see resolveRouter.
+// checkBackendKeys warns about a declared backend whose api_key_env resolves
+// to nothing — neither in the environment nor in the credentials file. A
+// warning, not an error: a backend can be declared and unused, and only a
+// route that actually targets it needs the credential. cmd/omni promotes
+// this to a hard failure when such a route exists — see resolveRouter.
 func checkBackendKeys(e *Effective) {
 	for _, name := range sortedBackendNames(e.Backends.V) {
 		b := e.Backends.V[name]
-		if b.APIKeyEnv == "" || os.Getenv(b.APIKeyEnv) != "" {
+		if b.APIKeyEnv == "" {
+			continue
+		}
+		if _, _, ok := e.SecretFor(b.APIKeyEnv); ok {
 			continue
 		}
 		e.checkIssues = append(e.checkIssues, Issue{
-			Path:    "backends." + name + ".api_key_env",
-			Message: fmt.Sprintf("$%s is not set in the environment; routes to backend %q will fail", b.APIKeyEnv, name),
-			Source:  b.Source,
-			Level:   LevelWarning,
+			Path: "backends." + name + ".api_key_env",
+			Message: fmt.Sprintf(
+				"$%s is set neither in the environment nor in %s; routes to backend %q will fail",
+				b.APIKeyEnv, e.CredentialsPathForMessage(), name,
+			),
+			Source: b.Source,
+			Level:  LevelWarning,
 		})
 	}
 }
@@ -195,7 +200,7 @@ func checkRoutingCapability(e *Effective) {
 	e.checkIssues = append(e.checkIssues, Issue{
 		Path: "route",
 		Message: fmt.Sprintf(
-			"cannot apply routing rules for agent %q: model rewriting is not supported for its API style (%s) — sessions are recorded but not rewritten",
+			"cannot apply routing rules for agent %q: model rewriting is not supported for its API style (%s) — traffic passes through unchanged",
 			e.Agent, p.APIStyle,
 		),
 		Source: e.Routes.Source,

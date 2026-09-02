@@ -73,10 +73,13 @@ model       = "minimax/minimax-m3:free"
 X-Title = "omni"
 ```
 
-The credential is **named, never written**. omni reads `api_key_env` from the
-environment at launch, and a config file containing a credential-shaped value
-is refused outright. `api_key_env` may be omitted only for a loopback
-endpoint that wants no auth.
+The credential is **named, never written**. At launch omni resolves
+`api_key_env` from its own environment, and failing that from
+`~/.omni/credentials`; a config file containing a credential-shaped value is
+refused outright. Which of the two you use decides whether the agent can also
+see the key — see [API keys and
+credentials](../../configuration/credentials/). `api_key_env` may be omitted
+only for a loopback endpoint that wants no auth.
 
 ### omni routes; it does not translate
 
@@ -159,7 +162,7 @@ before launch:
 ```
 omni: cannot apply --model-map for agent "codex"
   model rewriting is Anthropic-only in this version.
-  codex sessions are recorded but not rewritten.
+  codex traffic passes through unchanged.
 ```
 
 Silently ignoring the rules would be the worst outcome: you would believe you
@@ -167,11 +170,46 @@ were routing, and you would not be. The same applies to a missing credential
 — a rule targeting a backend whose `api_key_env` is unset refuses the launch
 rather than failing on the first matching request.
 
+## When a routed request fails
+
+A backend that rejects your request answers your *agent*, and the agent has no
+idea a rule sent it somewhere else. What you see is the agent's own retry
+loop, which names neither the backend nor the reason:
+
+```
+401 User not found. · Retrying in 1s · attempt 4/10
+```
+
+omni is the only component that knows both halves, so `-v` makes it say so:
+
+```console
+$ omni -v claude
+omni: route: claude-haiku-4-5 -> minimax/minimax-m3:free via openrouter
+omni: route: backend "openrouter" returned 401 for minimax/minimax-m3:free
+  (routed from claude-haiku-4-5): {"error":{"message":"User not found.","code":401}}
+```
+
+The line names the backend, both model names, the status, and a short excerpt
+of what the backend actually said. Read the status first:
+
+| Status | Usually means |
+|---|---|
+| `401`, `403` | The backend rejected the key. Most often it is dead or revoked rather than absent — a *missing* key is caught before launch. |
+| `404` | The backend does not have that model. Check the `model` in your rule against the backend's own catalogue. |
+| `400` | The request is valid for the model your agent chose but not for the one you routed it to. This is the gap the [adapter](#the-adapter) will close. |
+| `429` | Rate limited by the backend, not by your provider. |
+
+Only requests a rule actually claimed are reported; traffic omni forwarded
+untouched stays silent, and so does a request that succeeds. Nothing is
+printed without `-v`, and the excerpt never contains your credential — if a
+backend echoes the key back in its error, omni redacts it before printing.
+
 ## Watching the cost
 
 Every recorded session's `meta.json` totals four token counters, and
 `cache_read_input_tokens_total` is the one that answers "is this costing me
-money I did not expect?"
+money I did not expect?" You need a recording to read them, so run the
+comparison with `omni --record <agent>` at both ends of it.
 
 ```json
 "summary": {
@@ -184,7 +222,7 @@ money I did not expect?"
 
 Cache reads should dominate in a long session. If they collapse between a
 recorded baseline and a routed session, something in the request prefix is
-changing — that is the canary, and it is recorded whether or not routing is
+changing — that is the canary, and it is captured whether or not routing is
 on, precisely so the comparison is available.
 
 ## The adapter

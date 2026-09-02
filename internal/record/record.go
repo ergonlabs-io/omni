@@ -4,7 +4,7 @@
 // corpus is what every later phase (adapter golden files, cache-regression
 // checks) is built against.
 //
-// Two invariants shape the whole package:
+// Three invariants shape the whole package:
 //
 //   - Credential redaction is ON by default and is a positive opt-out only
 //     (internal-docs/05-constraints.md §6). The corpus gets committed to
@@ -13,6 +13,12 @@
 //     errors are logged to stderr and swallowed, never returned to a caller
 //     in a way that could abort an in-flight response (internal-docs/05
 //     §5). Package record never writes to stdout (internal-docs/09 §3).
+//   - Bodies stay verbatim, in their own files. The round-trip gate in
+//     internal-docs/07 §Tier 1 requires the exact bytes off the wire, so a
+//     body is never re-encoded, and never escaped into a JSON string where
+//     jq, git diff, and a human reading testdata/ could no longer see it.
+//     Everything *about* an exchange — headers, status, timing — goes to the
+//     session's exchanges.jsonl index instead.
 package record
 
 import (
@@ -25,6 +31,14 @@ import (
 	"sync"
 	"time"
 )
+
+// exchangeLogName is the session's append-only index: one JSON object per
+// line, two lines per exchange (a "request" event and a "response" event,
+// each written as soon as its headers are known so a killed session still
+// leaves an accurate partial index). It replaces the per-exchange
+// NNN.request.headers.json / NNN.response.headers.json pair, which doubled
+// the file count without ever being read on its own.
+const exchangeLogName = "exchanges.jsonl"
 
 // Recorder captures one agent session's traffic to a directory on disk. It is
 // safe for concurrent use: multiple exchanges (HTTP requests) may be in
@@ -42,6 +56,13 @@ type Recorder struct {
 	agentVersion string
 	usage        usageTotals
 	closed       bool
+
+	// logMu guards log and is deliberately separate from mu: appending an
+	// index line must not contend with the sink goroutines calling addUsage,
+	// and holding one lock while taking the other is what would make that a
+	// deadlock rather than just contention.
+	logMu sync.Mutex
+	log   *os.File
 
 	startTime time.Time
 
@@ -114,6 +135,17 @@ func New(baseDir, agentName, omniVersion string, opts ...Option) (*Recorder, err
 	}
 	r.dir = dir
 
+	// The index is opened once and appended to for the life of the session.
+	// Failing to open it is fail-open like every other write path here: the
+	// bodies still land on disk, and the session loses its index rather than
+	// its traffic.
+	if f, ferr := os.OpenFile(filepath.Join(r.dir, exchangeLogName),
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); ferr != nil {
+		warnf("record: failed creating %s, exchange metadata will not be indexed: %v", exchangeLogName, ferr)
+	} else {
+		r.log = f
+	}
+
 	// Write an initial meta.json immediately, so a session that crashes or is
 	// killed before Close still leaves a trace of when it started and with
 	// what agent. Close overwrites it with the final summary.
@@ -166,13 +198,15 @@ func (r *Recorder) SetAgentVersion(v string) {
 // Exchange represents one in-flight request/response pair being recorded.
 // Obtained from [Recorder.Begin].
 type Exchange struct {
-	r *Recorder
-	n int
+	r     *Recorder
+	n     int
+	start time.Time
 }
 
 // Begin starts recording one request/response exchange: it writes the
-// redacted request headers and the verbatim request body to disk, and
-// returns an Exchange used to record the eventual response.
+// verbatim request body to its own file and appends a "request" line to the
+// session's exchanges.jsonl carrying the redacted headers. It returns an
+// Exchange used to record the eventual response.
 //
 // Begin is fail-open (internal-docs/05 §5): if writing fails, it logs to
 // stderr and returns an Exchange that safely no-ops for the rest of its
@@ -187,19 +221,23 @@ func (r *Recorder) Begin(method, url string, header http.Header, body []byte) *E
 	n := r.seq
 	r.mu.Unlock()
 
-	ex := &Exchange{r: r, n: n}
+	start := r.now()
+	ex := &Exchange{r: r, n: n, start: start}
 
-	rec := requestRecord{
-		Method: method,
-		URL:    url,
-		Header: r.redactHeader(header),
-	}
-	if err := writeJSONFile(r.exchangePath(n, "request.headers.json"), rec); err != nil {
-		warnf("record: exchange %03d: failed writing request headers: %v", n, err)
-	}
-	if err := os.WriteFile(r.exchangePath(n, "request.json"), body, 0o600); err != nil {
+	bodyFile := exchangeFile(n, "request.json")
+	if err := os.WriteFile(filepath.Join(r.dir, bodyFile), body, 0o600); err != nil {
 		warnf("record: exchange %03d: failed writing request body: %v", n, err)
 	}
+
+	r.appendEvent(exchangeEvent{
+		Seq:      n,
+		Type:     "request",
+		Time:     start,
+		Method:   method,
+		URL:      url,
+		Header:   r.redactHeader(header),
+		BodyFile: bodyFile,
+	})
 
 	return ex
 }
@@ -209,6 +247,11 @@ func (r *Recorder) Begin(method, url string, header http.Header, body []byte) *E
 // line and headers as they are about to be sent to the client (header is
 // used, among other things, to detect text/event-stream and choose the
 // ".sse" vs ".json" file extension per internal-docs/07's corpus layout).
+//
+// The matching "response" line is appended to exchanges.jsonl here, when the
+// headers are known rather than when the body finishes: that keeps the index
+// accurate for a session killed mid-stream, and it makes the recorded
+// ttfb_ms an actual time-to-first-byte for a streaming response.
 //
 // Writes to the returned writer never block the caller for long (they hand
 // bytes to a background goroutine) and never return an error — a struggling
@@ -228,15 +271,19 @@ func (e *Exchange) ResponseWriter(status int, header http.Header) io.WriteCloser
 		ext = "sse"
 	}
 
-	rec := responseRecord{
-		Status: status,
-		Header: r.redactHeader(header),
-	}
-	if err := writeJSONFile(r.exchangePath(e.n, "response.headers.json"), rec); err != nil {
-		warnf("record: exchange %03d: failed writing response headers: %v", e.n, err)
-	}
+	bodyFile := exchangeFile(e.n, "response."+ext)
+	at := r.now()
+	r.appendEvent(exchangeEvent{
+		Seq:      e.n,
+		Type:     "response",
+		Time:     at,
+		Status:   status,
+		TTFBMs:   at.Sub(e.start).Milliseconds(),
+		Header:   r.redactHeader(header),
+		BodyFile: bodyFile,
+	})
 
-	f, err := os.OpenFile(r.exchangePath(e.n, "response."+ext), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(filepath.Join(r.dir, bodyFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		warnf("record: exchange %03d: failed creating response file: %v", e.n, err)
 		f = nil // fall through: still track usage even if we can't persist bytes.
@@ -259,15 +306,40 @@ func (r *Recorder) addUsage(u usageTotals) {
 	r.usage.CacheReadInputTokens += u.CacheReadInputTokens
 }
 
-func (r *Recorder) exchangePath(n int, suffix string) string {
-	return filepath.Join(r.dir, fmt.Sprintf("%03d.%s", n, suffix))
+// appendEvent writes one line to exchanges.jsonl. Like every other write
+// here it is fail-open: an encoding or write failure costs this session one
+// index line, never the proxied exchange.
+func (r *Recorder) appendEvent(ev exchangeEvent) {
+	b, err := json.Marshal(ev)
+	if err != nil {
+		warnf("record: exchange %03d: failed encoding %s event: %v", ev.Seq, ev.Type, err)
+		return
+	}
+	b = append(b, '\n')
+
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
+	if r.log == nil {
+		return // could not be opened, or the session is already closed.
+	}
+	if _, err := r.log.Write(b); err != nil {
+		warnf("record: exchange %03d: failed appending %s event: %v", ev.Seq, ev.Type, err)
+	}
+}
+
+// exchangeFile names an exchange's body file. It is a bare filename rather
+// than a path because it is also what the index's body_file field carries,
+// and that field must stay meaningful after the session directory is moved
+// into testdata/.
+func exchangeFile(n int, suffix string) string {
+	return fmt.Sprintf("%03d.%s", n, suffix)
 }
 
 // Close finalizes the session: waits for any in-flight response recording to
-// flush, then writes the final meta.json (start/end time, exchange count, and
-// the usage summary — including the cache_read_input_tokens totals that are
-// our canary for prompt-cache health per internal-docs/05 §1). Safe to call
-// once; a second call is a no-op.
+// flush, closes the exchange index, then writes the final meta.json
+// (start/end time, exchange count, and the usage summary — including the
+// cache_read_input_tokens totals that are our canary for prompt-cache health
+// per internal-docs/05 §1). Safe to call once; a second call is a no-op.
 //
 // Close should be called from the same defer that shuts down the proxy
 // (internal-docs/02's lifecycle), so a session's corpus is guaranteed
@@ -276,14 +348,25 @@ func (r *Recorder) Close() error {
 	r.wg.Wait()
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.closed {
+		r.mu.Unlock()
 		return nil
 	}
 	r.closed = true
-
 	end := r.now()
-	return writeJSONFile(filepath.Join(r.dir, "meta.json"), r.meta(&end))
+	m := r.meta(&end)
+	r.mu.Unlock()
+
+	r.logMu.Lock()
+	if r.log != nil {
+		if cerr := r.log.Close(); cerr != nil {
+			warnf("record: closing %s: %v", exchangeLogName, cerr)
+		}
+		r.log = nil // later appendEvent calls become no-ops rather than panics.
+	}
+	r.logMu.Unlock()
+
+	return writeJSONFile(filepath.Join(r.dir, "meta.json"), m)
 }
 
 // meta must be called with r.mu held, except from New (before any other
@@ -328,15 +411,30 @@ type summary struct {
 	CacheReadInputTokensTotal     int64 `json:"cache_read_input_tokens_total"`
 }
 
-type requestRecord struct {
-	Method string              `json:"method"`
-	URL    string              `json:"url"`
-	Header map[string][]string `json:"header"`
-}
+// exchangeEvent is one line of exchanges.jsonl. Request-only and
+// response-only fields share the struct and are omitempty, so a line stays
+// readable and a consumer can filter on .type without a schema:
+//
+//	jq 'select(.type == "response" and .status != 200)' exchanges.jsonl
+//
+// Body bytes are deliberately absent — BodyFile names the sibling file
+// holding them verbatim. See the package doc's third invariant.
+type exchangeEvent struct {
+	Seq  int       `json:"seq"`
+	Type string    `json:"type"` // "request" or "response"
+	Time time.Time `json:"time"`
 
-type responseRecord struct {
-	Status int                 `json:"status"`
-	Header map[string][]string `json:"header"`
+	// Request-only.
+	Method string `json:"method,omitempty"`
+	URL    string `json:"url,omitempty"`
+
+	// Response-only. TTFBMs is measured from the request event, so for a
+	// streamed response it is time-to-first-byte, not total duration.
+	Status int   `json:"status,omitempty"`
+	TTFBMs int64 `json:"ttfb_ms,omitempty"`
+
+	Header   map[string][]string `json:"header"`
+	BodyFile string              `json:"body_file"`
 }
 
 func writeJSONFile(path string, v any) error {

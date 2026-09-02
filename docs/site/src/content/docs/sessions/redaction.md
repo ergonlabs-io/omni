@@ -43,6 +43,10 @@ the value costs everything.
 
 Request and response headers are both redacted, on the same rules.
 
+Recording itself is off by default, so the first decision is yours: nothing
+reaches `~/.omni/sessions` until `--record` or `record.enabled` says so. What
+follows describes what happens to a session once you have asked for one.
+
 ## Redaction is a positive opt-out
 
 A recorder is redacting unless something explicitly turned it off. There is no
@@ -91,6 +95,7 @@ OMNI_HOME=/tmp/omni-debug OMNI_REDACT=false omni claude
 rm -rf /tmp/omni-debug
 ```
 
-A project's `.omni.conf` cannot set `redact`. A repository you cloned must
-never be able to turn off credential redaction on your machine — see
+A project's `.omni.conf` can set neither `redact` nor `record.enabled`. A
+repository you cloned must never be able to turn off credential redaction on
+your machine, nor turn recording on — see
 [Per-project config](../../configuration/per-project-config/).

@@ -1,8 +1,8 @@
 package config
 
 // locator returns the provenance string for a dotted, layer-local path
-// (e.g. "mode", "redact") — typically "file:line" via sourceAt, or a fixed
-// label for non-file layers (env, CLI overrides).
+// (e.g. "mode", "record.enabled") — typically "file:line" via sourceAt, or a
+// fixed label for non-file layers (env, CLI overrides).
 type locator func(path string) string
 
 // applyDefaults overlays r (an omni.conf [defaults] table, or an
@@ -19,6 +19,9 @@ func applyDefaults(e *Effective, r rawDefaults, loc locator, issues *[]Issue) {
 	if r.Redact != nil {
 		e.Redact = Value[bool]{*r.Redact, loc("redact")}
 	}
+	if r.Record.Enabled != nil {
+		e.RecordEnabled = Value[bool]{*r.Record.Enabled, loc("record.enabled")}
+	}
 }
 
 // applyAgent overlays r (an [agents.X] table, an environment-sourced
@@ -33,6 +36,9 @@ func applyAgent(e *Effective, r rawAgent, loc locator, issues *[]Issue) {
 	}
 	if r.Redact != nil {
 		e.Redact = Value[bool]{*r.Redact, loc("redact")}
+	}
+	if r.Record.Enabled != nil {
+		e.RecordEnabled = Value[bool]{*r.Record.Enabled, loc("record.enabled")}
 	}
 	if r.Binary != nil {
 		e.Binary = Value[string]{*r.Binary, loc("binary")}
