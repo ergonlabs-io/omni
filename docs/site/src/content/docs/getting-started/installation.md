@@ -69,17 +69,30 @@ together.
 `omni init` creates the configuration tree, and is safe to re-run:
 
 ```
-~/.omni/
+~/.omni/                   0700
 ├── omni.conf              everything: defaults, backends, per-agent
 ├── profiles.d/            your own agent profiles
 ├── ca/                    0700; the CA is generated lazily, not here
 ├── cache/
-└── sessions/              recorded sessions
+└── sessions/              0700; recorded sessions, files inside 0600
 ```
 
-`~/.omni` and `ca/` are `0700`. Recorded sessions can contain source code and
-credentials, so the home directory's permissions are set explicitly at
-creation rather than left to your umask.
+Recorded sessions can contain source code and credentials, so `~/.omni`,
+`ca/` and `sessions/` are created `0700`, explicitly rather than left to your
+umask.
+
+`omni init` will **not** change the permissions of a directory that already
+existed — if you created `~/.omni` yourself, or pointed `OMNI_HOME` at an
+existing directory, it stays as you made it. Both `omni init` and
+`omni config check` warn when that leaves it readable by others:
+
+```
+omni: warning: /home/you/.omni is 0755, not 0700 — recorded sessions,
+  and everything else omni keeps, live here.
+  fix with: chmod 0700 /home/you/.omni
+```
+
+This matters most with `OMNI_HOME` under a shared directory such as `/tmp`.
 
 ## Verify
 

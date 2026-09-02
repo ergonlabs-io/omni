@@ -10,17 +10,29 @@ import (
 //go:embed templates/omni.conf.tmpl
 var omniConfTemplate []byte
 
-// dirPerm and homePerm/caPerm implement the exact permissions
-// internal-docs/08-configuration.md §Bootstrap calls for: "~/.omni 0700,
-// ca/ 0700" set explicitly rather than relying on umask. Directories that
-// hold nothing sensitive on their own (profiles.d/, cache/, sessions/)
-// use the ordinary 0755 — the home directory's 0700 already
-// blocks other users from traversing into them at all.
+// Permissions are set explicitly at creation rather than left to umask.
+// (umask can only clear bits, never set them, so an explicit mode is a
+// ceiling — but a permissive umask must not be able to widen these.)
+//
+// privatePerm is for anything whose *contents or listing* is sensitive:
+//
+//	~/.omni      holds everything below it
+//	ca/          will hold the CA private key
+//	sessions/    the listing alone leaks when you ran which agent, and the
+//	             transcripts below it are prompts and source code
+//
+// sessions/ used to be dirPerm on the theory that the home directory's
+// 0700 already blocks traversal. It does — but only when the home is one
+// omni created. Init cannot tighten a directory that already existed (see
+// permissionWarnings), so a sessions/ that defends itself is worth the one
+// changed constant. Its contents are separately 0700/0600, written by
+// internal/record.
+//
+// dirPerm is for directories whose listing is not interesting on its own.
 const (
-	homePerm = 0o700
-	caPerm   = 0o700
-	dirPerm  = 0o755
-	filePerm = 0o644
+	privatePerm = 0o700
+	dirPerm     = 0o755
+	filePerm    = 0o644
 )
 
 // Init creates the omni home tree under home and writes one fully-commented
@@ -73,7 +85,7 @@ func Init(home string) ([]string, error) {
 		return nil
 	}
 
-	if err := mkdir(home, homePerm); err != nil {
+	if err := mkdir(home, privatePerm); err != nil {
 		return created, fmt.Errorf("config: init %s: %w", home, err)
 	}
 	// Directory permissions are not retroactively tightened on an
@@ -91,9 +103,9 @@ func Init(home string) ([]string, error) {
 		perm os.FileMode
 	}{
 		{profilesDir, dirPerm},
-		{caDir, caPerm}, // 0700 — will hold ca.pem / ca-key.pem once generated lazily
+		{caDir, privatePerm}, // will hold ca.pem / ca-key.pem once generated lazily
 		{cacheDir, dirPerm},
-		{sessionsDir, dirPerm},
+		{sessionsDir, privatePerm},
 	} {
 		if err := mkdir(d.path, d.perm); err != nil {
 			return created, fmt.Errorf("config: init %s: %w", d.path, err)

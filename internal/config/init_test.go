@@ -57,13 +57,13 @@ func TestInitCreatesTree(t *testing.T) {
 
 	if runtime.GOOS != "windows" {
 		if fi, err := os.Stat(home); err == nil {
-			if perm := fi.Mode().Perm(); perm != homePerm {
-				t.Errorf("home perm = %o, want %o", perm, homePerm)
+			if perm := fi.Mode().Perm(); perm != privatePerm {
+				t.Errorf("home perm = %o, want %o", perm, privatePerm)
 			}
 		}
 		if fi, err := os.Stat(caDir); err == nil {
-			if perm := fi.Mode().Perm(); perm != caPerm {
-				t.Errorf("ca/ perm = %o, want %o", perm, caPerm)
+			if perm := fi.Mode().Perm(); perm != privatePerm {
+				t.Errorf("ca/ perm = %o, want %o", perm, privatePerm)
 			}
 		}
 	}
