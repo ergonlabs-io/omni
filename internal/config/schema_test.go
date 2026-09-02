@@ -26,10 +26,11 @@ var nonScalarKeys = map[string]bool{"route": true, "env": true}
 // built-in default, so "it round-tripped" cannot be confused with "it was
 // never touched".
 var probes = map[string]string{
-	"mode":     "off",
-	"redact":   "false",
-	"binary":   "/probe/binary",
-	"upstream": "https://probe.example",
+	"mode":           "off",
+	"redact":         "false",
+	"record.enabled": "true",
+	"binary":         "/probe/binary",
+	"upstream":       "https://probe.example",
 }
 
 // tomlLeafPaths walks a raw config struct the way BurntSushi/toml decodes
@@ -203,8 +204,10 @@ func TestProjectScopeIsMinimal(t *testing.T) {
 			t.Errorf("%q is writable from ./.omni.conf — this is the untrusted-input boundary", k)
 		}
 	}
-	// Named explicitly because §Security names them.
-	for _, forbidden := range []string{"binary", "upstream", "redact"} {
+	// Named explicitly because §Security names them. record.enabled is here
+	// because a repo that could switch recording on would be deciding to
+	// write your prompts — its own source included — to disk for you.
+	for _, forbidden := range []string{"binary", "upstream", "redact", "record.enabled"} {
 		if projectAllowedPath(forbidden) {
 			t.Errorf("%q is writable from ./.omni.conf", forbidden)
 		}

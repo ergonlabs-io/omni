@@ -79,6 +79,11 @@ That is the whole tree. omni does not scaffold directories for features it
 does not have yet — `ca/`, for the Tier 2 certificate authority, appears
 when a CA is first generated.
 
+One optional file is not created either: `~/.omni/credentials`, which holds
+backend API keys and must be mode `0600`. You write it on the day you have a
+key to put in it — see
+[API keys and credentials](../../configuration/credentials/).
+
 Recorded sessions can contain source code and credentials, so `~/.omni` and
 `sessions/` are created `0700`, explicitly rather than left to your umask.
 

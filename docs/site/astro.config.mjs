@@ -48,6 +48,7 @@ export default defineConfig({
 					label: 'Configuration',
 					items: [
 						{ label: 'Configuration file', slug: 'configuration/configuration-file' },
+						{ label: 'API keys and credentials', slug: 'configuration/credentials' },
 						{ label: 'Per-project config', slug: 'configuration/per-project-config' },
 						{ label: 'Environment variables', slug: 'configuration/environment-variables' },
 					],

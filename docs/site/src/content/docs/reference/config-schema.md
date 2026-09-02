@@ -26,22 +26,28 @@ The **Scope** column says where a key may be set:
 | Key | Type | Default | Scope | Environment |
 |---|---|---|---|---|
 | `mode` | `off` \| `record` | `record` | global, agent, project | `OMNI_MODE` |
+| `record.enabled` | bool | `false` | global, agent | `OMNI_RECORD__ENABLED` |
 | `redact` | bool | `true` | global, agent | `OMNI_REDACT` |
 | `binary` | string | agent's own | agent | `OMNI_AGENTS__<NAME>__BINARY` |
 | `upstream` | string | agent's own | agent | `OMNI_AGENTS__<NAME>__UPSTREAM` |
 
-That is every scalar key. There are no nested tables: a setting exists only
-if omni does something with it, and what omni does needs four values.
+That is every key. A setting exists only if omni does something with it.
 
 `mode`:
 
-- `off` — forward only; nothing is recorded and no rule is applied.
-- `record` — capture every exchange to `~/.omni/sessions`, and apply any
-  `[[route]]` rules.
+- `off` — forward only; no rule is applied and nothing can be recorded.
+- `record` — intercept: apply any `[[route]]` rules, and allow recording.
 
 There is no `route` mode. Routing is on whenever you have written rules —
 a rule you wrote is a rule you meant. `mode = "route"` is still accepted and
 treated as `record`, so an existing config keeps working.
+
+`record.enabled` is what actually writes a session to `~/.omni/sessions`, and
+it is **off by default**. It is deliberately separate from `mode`: routing
+leaves no trace, but a recording holds the prompts your agent sent — source
+code and secrets from your working directory included — so it is opt-in on
+its own. Recording needs both: `mode` not `off`, and `record.enabled` true.
+`omni --record <agent>` sets it for one run.
 
 `redact` strips `Authorization`, `x-api-key` and `*-api-key` headers from
 recorded traffic. It does **not** sanitize bodies — see
@@ -54,7 +60,7 @@ Global only. A backend is a destination a routing rule can target.
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `base_url` | string | required | `https`, or `http` on loopback only. |
-| `api_key_env` | string | — | Name of the env var holding the credential. |
+| `api_key_env` | string | — | Name of the variable holding the credential. |
 | `api_style` | `anthropic` \| `openai` | `anthropic` | Must match the agent's. |
 | `model` | string | — | What to ask this backend for, absent a rule's own. |
 | `headers` | table | — | Extra headers on every request to this backend. |
@@ -71,10 +77,13 @@ X-Title = "omni"
 ```
 
 `api_key_env` names a variable; it is never the key itself, and a
-credential-shaped value anywhere in config is refused at load. It may be
-omitted only for a loopback endpoint, or for a backend that resolves to the
-agent's own upstream — a remote backend with no credential is an error,
-because omni strips the agent's own before forwarding.
+credential-shaped value anywhere in config is refused at load. The variable
+is resolved from omni's own environment first and from `~/.omni/credentials`
+second — see [API keys and
+credentials](../../configuration/credentials/). It may be omitted only for a
+loopback endpoint, or for a backend that resolves to the agent's own
+upstream — a remote backend with no credential is an error, because omni
+strips the agent's own before forwarding.
 
 ## `[[route]]`
 
@@ -128,6 +137,7 @@ of the schema being this short.
 | Key | Status |
 |---|---|
 | `mode` | Applied. `off` disables recording and routing. |
+| `record.enabled` | Applied. Off by default; also requires `mode` ≠ `off`. |
 | `redact` | Applied. |
 | `binary`, `upstream` | Applied. |
 | `route`, `backends.*` | Applied. |

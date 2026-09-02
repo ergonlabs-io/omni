@@ -24,7 +24,8 @@ USAGE
     omni <subcommand> [flags]
 
 EXAMPLES
-    omni claude                                  record a Claude Code session
+    omni claude                                  run Claude Code through omni
+    omni --record claude                         ...and record the session
     omni --mode route claude                     apply configured model routing
     omni --model-map claude-opus-5=claude-sonnet-5 claude
     omni codex --search                          flags after the agent go to it
@@ -54,7 +55,11 @@ SUBCOMMANDS
 
 FLAGS
     --mode <off|record>         interception mode (default: from config)
-    --record-only               shorthand for --mode record
+    --record                    record this session to ~/.omni/sessions;
+                                off by default, because recorded prompts
+                                contain your working directory's source
+    --no-record                 force recording off for this run
+    --record-only               shorthand for --mode record --record
     --model-map <from=to>       one-off model rewrite; repeatable
     --dry-run                   print what would happen; launch nothing
     -v, --verbose               diagnostics to stderr; repeatable

@@ -21,6 +21,9 @@ func TestPrecedenceOrdering(t *testing.T) {
 	if e.Mode.V != ModeRecord || e.Mode.Source != builtinSource {
 		t.Fatalf("layer1: mode = %+v, want record/(built-in default)", e.Mode)
 	}
+	if e.RecordEnabled.V || e.RecordEnabled.Source != builtinSource {
+		t.Fatalf("layer1: record.enabled = %+v, want false/(built-in default)", e.RecordEnabled)
+	}
 
 	// Layer 2: global [defaults].
 	writeTestFile(t, GlobalConfigPath(home), `

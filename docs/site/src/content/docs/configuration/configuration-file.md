@@ -54,15 +54,22 @@ keys — see [Per-project config](../per-project-config/).
 [defaults]
 # off | record
 #   off     passthrough, no proxy involvement beyond forwarding
-#   record  capture all traffic to ~/.omni/sessions (default)
+#   record  intercept: apply rules, and allow recording (default)
 # [[route]] rules apply whenever they exist and mode is not "off".
 mode = "record"
 
+record.enabled = false         # write sessions to ~/.omni/sessions; off by default
 redact = true                  # strip Authorization / x-api-key / *-api-key
 ```
 
-Those two keys are the whole of `[defaults]`. omni deliberately has no key
+Those three keys are the whole of `[defaults]`. omni deliberately has no key
 for a feature it cannot perform yet.
+
+`mode` and `record.enabled` are separate switches on purpose. Interception
+and routing leave nothing behind; recording writes your prompts — and the
+source code and secrets they carry — to disk. Making one imply the other
+would mean either disabling routing for everyone or recording for everyone,
+so recording opts in on its own (`omni --record <agent>` for a single run).
 
 The proxy binds loopback on an ephemeral port and is not configurable. omni
 holds live credentials while it runs, so a non-loopback bind is refused
@@ -80,6 +87,11 @@ api_key_env = "OPENROUTER_API_KEY"   # the variable's name, never the key
 api_style   = "anthropic"
 model       = "minimax/minimax-m3:free"
 ```
+
+`api_key_env` names a variable. omni looks it up in its own environment and,
+failing that, in `~/.omni/credentials` — a `0600` file that is the one place
+a key may be written down. See
+[API keys and credentials](../credentials/).
 
 ## Per-agent config
 
@@ -164,10 +176,10 @@ agent has started is much worse than failing in five milliseconds.
 - Durations and enum values are parsed and reported by key, with the file and
   line that set them.
 
-Two problems are fatal — omni refuses to load at all rather than warning: a
-any value anywhere in config that
-looks like an API key or bearer token. Every key, its default, and whether it
-is applied yet is listed in the
+Two problems are fatal — omni refuses to load at all, rather than warning:
+any value anywhere in config that looks like an API key or bearer token, and
+a `~/.omni/credentials` file whose permissions let anyone but you read it.
+Every key, its default, and whether it is applied yet is listed in the
 [config schema](../../reference/config-schema/).
 
 When something is surprising, `omni config show` annotates each effective

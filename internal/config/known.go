@@ -19,15 +19,17 @@ import (
 // production — a key absent here is reported to the user as a typo — so the
 // test, not the reader, is the guarantee.
 var knownDefaultsPaths = map[string]bool{
-	"mode":   true,
-	"redact": true,
+	"mode":           true,
+	"redact":         true,
+	"record.enabled": true,
 }
 
 var knownAgentPaths = map[string]bool{
-	"mode":     true,
-	"redact":   true,
-	"binary":   true,
-	"upstream": true,
+	"mode":           true,
+	"redact":         true,
+	"record.enabled": true,
+	"binary":         true,
+	"upstream":       true,
 }
 
 // knownAgentWildcards are the agent-shaped keys whose leaves are not
@@ -38,7 +40,10 @@ var knownAgentWildcards = []string{"route", "env"}
 // projectAllowedPath is the SECURITY-CRITICAL allowlist for ./.omni.conf
 // (project, repo-local config): a repo you cd into and did not write must
 // never be able to set `binary` (arbitrary code execution on cd),
-// `upstream`, `all_traffic`, `record.redact`, or `proxy.listen`. The
+// `upstream`, `all_traffic`, `redact`, `record.enabled`, or `proxy.listen`.
+// record.enabled belongs on that list twice over: a repo that could switch
+// recording on would be choosing to write your prompts — its own source
+// included — to disk on your behalf.
 // See internal-docs/08-configuration.md §Security, and read
 // loadProjectConfig before adding anything here. TestProjectScopeIsMinimal
 // pins the list.

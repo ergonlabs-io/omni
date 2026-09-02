@@ -50,7 +50,7 @@ func runAgent(inv *Invocation) int {
 		errorf("cannot apply --model-map for agent %q\n", p.Name)
 		fmt.Fprintf(os.Stderr,
 			"  model rewriting is Anthropic-only in this version.\n"+
-				"  %s sessions are recorded but not rewritten.\n", p.Name)
+				"  %s traffic passes through unchanged.\n", p.Name)
 		return exitUsage
 	}
 
@@ -70,8 +70,20 @@ func runAgent(inv *Invocation) int {
 	if v, ok := inv.Get("--mode"); ok {
 		overrides["mode"] = v
 	}
+	// Recording is off by default (see config.Effective.RecordEnabled), so
+	// --record is the flag that turns it on for one run. --no-record is its
+	// counterpart for a config that has switched it on persistently, and
+	// wins when both are given: the flag that writes less to disk should be
+	// the one that survives an ambiguous command line.
+	if inv.Has("--record") {
+		overrides["record.enabled"] = "true"
+	}
 	if inv.Has("--record-only") {
 		overrides["mode"] = string(config.ModeRecord)
+		overrides["record.enabled"] = "true"
+	}
+	if inv.Has("--no-record") {
+		overrides["record.enabled"] = "false"
 	}
 	// --all-traffic sets nothing: Tier 2 full MITM is not implemented, so
 	// there is no config key for it to move. The flag survives only for the

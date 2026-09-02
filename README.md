@@ -19,8 +19,8 @@ code with each other.
 </div>
 
 ```sh
-omni claude          # launch Claude Code, record every LLM call
-omni codex           # same, for Codex
+omni claude             # launch Claude Code through the proxy
+omni --record claude    # same, and keep a session recording
 omni --dry-run claude   # show what would happen; launch nothing
 ```
 
@@ -89,13 +89,13 @@ This project documents what it does, not what it intends to do.
 
 | | Capability | Status |
 |---|---|---|
-| ✅ | Session recording to `~/.omni/sessions` | Works |
+| ✅ | Session recording to `~/.omni/sessions` | Works, opt-in (`--record`) |
 | ✅ | Tier 1 interception (base-URL redirect to loopback) | Works |
 | ✅ | Header redaction | Works, on by default |
 | ✅ | Layered config, 7 precedence layers with provenance | Works |
 | ✅ | PTY, raw mode, `SIGWINCH`, signal forwarding, exit codes | Works |
 | ✅ | `omni init`, `config show`, `config check`, `config path` | Works |
-| ✅ | `--dry-run`, `--version`, `--mode`, `--verbose`, `--model-map` | Works |
+| ✅ | `--dry-run`, `--version`, `--mode`, `--record`, `--verbose`, `--model-map` | Works |
 | ✅ | `[[route]]` rules and `[backends.*]` | Works |
 | ✅ | `[backends.*]` routing to another provider | Works |
 | 🚧 | Capability adapter | Designed |
@@ -177,8 +177,15 @@ nothing, binds nothing.
 omni claude
 ```
 
-Claude Code, exactly as it always behaves, with every LLM call recorded to
-`~/.omni/sessions/`.
+Claude Code, exactly as it always behaves, with every LLM call passing through
+omni. Add `--record` to keep the traffic:
+
+```sh
+omni --record claude
+```
+
+Recording is off unless you ask for it, because a recording is your prompts —
+and the source and secrets they carry — written to disk.
 
 > [!TIP]
 > Everything after the agent name belongs to the agent, verbatim. That means
@@ -187,23 +194,32 @@ Claude Code, exactly as it always behaves, with every LLM call recorded to
 
 ## Recorded sessions
 
-One directory per session, named for when it started and which agent ran:
+Recording is opt-in: `omni --record <agent>`, or `record.enabled = true` in
+config. When it is on, you get one directory per session, named for when it
+started and which agent ran:
 
 ```
 ~/.omni/sessions/2026-08-31T09-14-02-claude/
 ├── meta.json
-├── 001.request.headers.json
+├── exchanges.jsonl
 ├── 001.request.json
-├── 001.response.headers.json
 ├── 001.response.sse
 └── ...
 ```
 
-Bodies are stored verbatim rather than reformatted — a prettified copy answers
-a different question than the one you will be asking. The response extension is
-chosen from `Content-Type`, so streams and non-streams are distinguishable
-without opening them. `meta.json` carries the agent, omni version, timings,
-exchange count, and a token summary.
+`exchanges.jsonl` is the index: one JSON line per request and per response, in
+the order they happened, carrying method, URL, status, headers, time-to-first-byte,
+and the name of the body file. Bodies live in their own files and are stored
+verbatim rather than reformatted or escaped — a prettified copy answers a
+different question than the one you will be asking, and a byte-identical copy is
+what makes a session replayable. The response extension is chosen from
+`Content-Type`, so streams and non-streams are distinguishable without opening
+them. `meta.json` carries the agent, omni version, timings, exchange count, and a
+token summary.
+
+```sh
+jq -r 'select(.type=="response") | "\(.seq) \(.status) \(.ttfb_ms)ms"' exchanges.jsonl
+```
 
 > [!NOTE]
 > Recorded sessions can contain source code and credentials from your working
@@ -220,8 +236,9 @@ one won for every value.
 ```toml
 # ~/.omni/omni.conf
 [defaults]
-mode   = "record"   # off | record
-redact = true       # strip Authorization / x-api-key / *-api-key
+mode   = "record"       # off | record — intercept and route
+record.enabled = false  # write sessions to disk; off by default
+redact = true           # strip Authorization / x-api-key / *-api-key
 ```
 
 That is the whole of `[defaults]`. Anything omni cannot actually do yet has
@@ -267,6 +284,14 @@ omni routes; it does not translate. A backend must speak the agent's own wire
 format, so `api_style` is checked against the agent's and a mismatch is
 rejected at load rather than forwarded and hoped over — point `base_url` at a
 translating gateway if you need one.
+
+`api_key_env` names a variable, never a key: omni resolves it from its own
+environment and then from `~/.omni/credentials`, a `0600` file of
+`NAME=value` lines that is the one place in the tree a key may be written
+down. A credential-shaped value anywhere in config is refused at load. The
+choice between the two decides who else sees the key — a variable you export
+is inherited by the agent omni launches; one kept in the credentials file is
+used by omni alone.
 
 Before a request leaves for a backend, the agent's credential headers are
 replaced with the backend's own — `Authorization`, `x-api-key`, and anything

@@ -14,16 +14,21 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ergonlabs-io/omni/internal/record"
 )
@@ -166,10 +171,137 @@ func (s *Server) newReverseProxy(upstream *url.URL) *httputil.ReverseProxy {
 		// Flush after every write, immediately. This is the single most
 		// important line in this file: without it, a buffered io.Copy makes
 		// the agent's TUI look frozen for the whole generation (doc 05 §2).
-		FlushInterval: -1,
-		ErrorHandler:  s.errorHandler,
+		FlushInterval:  -1,
+		ErrorHandler:   s.errorHandler,
+		ModifyResponse: s.modifyResponse,
 	}
 	return rp
+}
+
+// errorExcerptMax bounds how much of a failing response body is quoted in a
+// diagnostic. Long enough for a provider's JSON error object, short enough
+// that it cannot flood the stderr of a full-screen TUI.
+const errorExcerptMax = 512
+
+// modifyResponse observes responses to requests a routing rule claimed, so a
+// backend that rejects them can be reported by whoever asked to hear about it.
+//
+// It observes only. Nothing about the response is altered — not the status,
+// not the headers, not a byte of the body — and OmniErrorHeader is never set,
+// because the response belongs to upstream and not to omni (the distinction
+// TestFailOpenOnUpstream500 pins). It also always returns nil: a non-nil
+// error makes ReverseProxy discard the response and call ErrorHandler, which
+// would turn a diagnostic into the outage it was meant to explain.
+//
+// The guards are ordered so the common cases cost nothing. An unrouted
+// request, or a routed one nobody asked to hear about, returns before the
+// status is even considered; any response below 400 returns before the body
+// is touched. That is what keeps this clear of internal-docs/05 §2's "never
+// buffer" — a healthy streaming generation never reaches the read below.
+func (s *Server) modifyResponse(resp *http.Response) error {
+	ri := routeFor(resp.Request)
+	if ri == nil || ri.onFail == nil {
+		return nil
+	}
+	if resp.StatusCode < 400 {
+		return nil
+	}
+
+	f := RouteFailure{From: ri.from, To: ri.to, Status: resp.StatusCode}
+	secret := ""
+	if ri.backend != nil {
+		f.Backend = ri.backend.Name
+		secret = ri.backend.APIKey
+	}
+	f.Body = peekErrorBody(resp, secret)
+	ri.onFail(f)
+	return nil
+}
+
+// peekErrorBody reads a bounded prefix of resp.Body and puts it back, so the
+// caller can quote the error without the client losing a byte. It returns ""
+// rather than risk a response it cannot read safely.
+func peekErrorBody(resp *http.Response, secret string) string {
+	if resp.Body == nil || resp.Body == http.NoBody {
+		return ""
+	}
+	// An error delivered as a stream is not worth interrupting a stream for.
+	if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(
+		strings.ToLower(strings.TrimSpace(ct)), "text/event-stream") {
+		return ""
+	}
+	// Agents send their own Accept-Encoding, so net/http does not
+	// transparently decompress for us and these bytes would be binary noise.
+	if enc := resp.Header.Get("Content-Encoding"); enc != "" && !strings.EqualFold(enc, "identity") {
+		return ""
+	}
+
+	// Read enough that a credential straddling the excerpt boundary is still
+	// whole when it is redacted below, plus one byte: filling the buffer is
+	// how we learn there was more body than we are going to quote.
+	full := errorExcerptMax + len(secret) + 1
+	limit := full
+	if resp.ContentLength >= 0 && int64(limit) > resp.ContentLength {
+		limit = int(resp.ContentLength)
+	}
+	if limit <= 0 {
+		return ""
+	}
+
+	buf := make([]byte, limit)
+	n, _ := io.ReadFull(resp.Body, buf) // a short read is the normal case
+	peeked := buf[:n]
+
+	orig := resp.Body
+	resp.Body = peekedBody{
+		Reader: io.MultiReader(bytes.NewReader(peeked), orig),
+		Closer: orig,
+	}
+	return sanitizeExcerpt(peeked, secret, n == full)
+}
+
+// peekedBody re-attaches an already-read prefix in front of the rest of a
+// response body, closing the original underneath.
+type peekedBody struct {
+	io.Reader
+	io.Closer
+}
+
+// sanitizeExcerpt makes upstream-controlled bytes safe to print on the stderr
+// of a terminal running a full-screen TUI: one line, printable characters
+// only, no escape sequences, and never the caller's own credential.
+func sanitizeExcerpt(b []byte, secret string, more bool) string {
+	var sb strings.Builder
+	space := false
+	for _, r := range string(b) {
+		switch {
+		case r == utf8.RuneError, !unicode.IsPrint(r) && !unicode.IsSpace(r):
+			// Binary noise and control characters, including the escape
+			// sequences that would otherwise repaint the user's screen.
+			continue
+		case unicode.IsSpace(r):
+			space = true
+		default:
+			if space && sb.Len() > 0 {
+				sb.WriteByte(' ')
+			}
+			space = false
+			sb.WriteRune(r)
+		}
+	}
+
+	out := sb.String()
+	if secret != "" {
+		out = strings.ReplaceAll(out, secret, "[redacted]")
+	}
+	if len(out) > errorExcerptMax {
+		out = strings.ToValidUTF8(out[:errorExcerptMax], "")
+		more = true
+	}
+	if more && out != "" {
+		out += "…"
+	}
+	return out
 }
 
 // errorHandler runs when the round trip to upstream itself fails (DNS,

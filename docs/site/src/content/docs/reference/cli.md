@@ -40,18 +40,26 @@ name is ambiguous, `omni run <agent>` is the unambiguous form.
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--mode` | `off\|record\|route` | Interception mode. Overrides config. |
-| `--record-only` | | Shorthand for `--mode record`. |
+| `--mode` | `off\|record` | Interception mode. Overrides config. |
+| `--record` | | Record this session to `~/.omni/sessions`. Off by default. |
+| `--no-record` | | Force recording off for this run. Wins over `--record`. |
+| `--record-only` | | Shorthand for `--mode record --record`. |
 | `--model-map` | `from=to` | One-off model rewrite. Repeatable. |
 | `--all-traffic` | | Full MITM of all traffic, not just the LLM API. Requires a CA, and fails loudly on agents with no confirmed trust mechanism. |
 | `--dry-run` | | Print what would happen; launch nothing. |
-| `-v`, `--verbose` | | Diagnostics to stderr. Repeatable. |
+| `-v`, `--verbose` | | Diagnostics to stderr: the proxy address, each applied route, and any routed request a backend answered with an error. Repeatable. |
 | `--version` | | Version, commit, and build date. |
 | `-h`, `--help` | | omni's help. |
 
 `--model-map` on an agent whose wire format omni cannot decode is an error
 naming the limitation. Model rewriting is Anthropic-only in this version;
-other agents are recorded but not rewritten.
+other agents are forwarded (and recorded, if you asked for it) but not
+rewritten.
+
+Recording is off unless `--record` or `record.enabled` turns it on, and it
+additionally needs a mode that intercepts at all — `--mode off --record`
+records nothing, because there is no tee to record from. `--dry-run` says
+which of the two is stopping it.
 
 ## Subcommands
 

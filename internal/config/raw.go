@@ -17,6 +17,16 @@ type rawGlobal struct {
 type rawDefaults struct {
 	Mode   *string `toml:"mode"`
 	Redact *bool   `toml:"redact"`
+
+	Record rawRecord `toml:"record"`
+}
+
+// rawRecord mirrors the [record] sub-table. It is a value, not a pointer,
+// because the decoder only ever needs "did this file set record.enabled" —
+// which the inner pointer already answers — and because TestSchemaIsConsistent
+// walks nested structs to derive the dotted paths every derivation must know.
+type rawRecord struct {
+	Enabled *bool `toml:"enabled"`
 }
 
 // rawAgent mirrors the [agents.<name>] table in omni.conf. The project
@@ -28,6 +38,8 @@ type rawAgent struct {
 	Binary   *string    `toml:"binary"`
 	Upstream *string    `toml:"upstream"`
 	Route    []rawRoute `toml:"route"`
+
+	Record rawRecord `toml:"record"`
 
 	Env map[string]string `toml:"env"`
 }

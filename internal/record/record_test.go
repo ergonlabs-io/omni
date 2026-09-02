@@ -2,12 +2,14 @@ package record
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -35,6 +37,41 @@ func writeAndClose(t *testing.T, w io.WriteCloser, chunks ...string) {
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+}
+
+// readEvents parses a session's exchanges.jsonl into its lines, in file
+// order. A malformed line fails the test: the index is only useful if it is
+// machine-readable, so "it wrote something" is not the assertion we want.
+func readEvents(t *testing.T, dir string) []exchangeEvent {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, exchangeLogName))
+	if err != nil {
+		t.Fatalf("reading %s: %v", exchangeLogName, err)
+	}
+	var out []exchangeEvent
+	for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		var ev exchangeEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("%s line %d is not valid JSON (%v): %s", exchangeLogName, i+1, err, line)
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+// eventFor returns the single event of the given type for exchange seq.
+func eventFor(t *testing.T, dir, typ string, seq int) exchangeEvent {
+	t.Helper()
+	for _, ev := range readEvents(t, dir) {
+		if ev.Type == typ && ev.Seq == seq {
+			return ev
+		}
+	}
+	t.Fatalf("no %q event for exchange %d in %s", typ, seq, exchangeLogName)
+	return exchangeEvent{}
 }
 
 func TestNewCreatesSessionDir(t *testing.T) {
@@ -82,14 +119,157 @@ func TestExchangeFileNaming(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
+	// Two files per exchange (verbatim bodies only), plus the two
+	// session-level files. Header metadata lives in exchanges.jsonl, not in
+	// a NNN.*.headers.json pair.
 	wantFiles := []string{
-		"001.request.headers.json", "001.request.json", "001.response.headers.json", "001.response.json",
-		"002.request.headers.json", "002.request.json", "002.response.headers.json", "002.response.sse",
-		"meta.json",
+		"001.request.json", "001.response.json",
+		"002.request.json", "002.response.sse",
+		exchangeLogName, "meta.json",
 	}
 	for _, f := range wantFiles {
 		if _, err := os.Stat(filepath.Join(r.Dir(), f)); err != nil {
 			t.Errorf("expected file %s: %v", f, err)
+		}
+	}
+
+	entries, err := os.ReadDir(r.Dir())
+	if err != nil {
+		t.Fatalf("reading session dir: %v", err)
+	}
+	if len(entries) != len(wantFiles) {
+		var got []string
+		for _, e := range entries {
+			got = append(got, e.Name())
+		}
+		t.Errorf("session dir has %d files, want %d: %v", len(entries), len(wantFiles), got)
+	}
+}
+
+// TestExchangeIndex pins the shape of exchanges.jsonl: one request line and
+// one response line per exchange, in order, each naming the sibling file
+// that holds the verbatim body.
+func TestExchangeIndex(t *testing.T) {
+	r := newTestRecorder(t)
+
+	ex1 := r.Begin("POST", "/v1/messages", http.Header{"Content-Type": {"application/json"}}, []byte(`{"a":1}`))
+	writeAndClose(t, ex1.ResponseWriter(200, http.Header{"Content-Type": {"text/event-stream"}}), "data: {}\n\n")
+
+	ex2 := r.Begin("POST", "/v1/messages?beta=true", http.Header{}, []byte(`{"a":2}`))
+	writeAndClose(t, ex2.ResponseWriter(429, http.Header{"Content-Type": {"application/json"}}), `{"error":{}}`)
+
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	events := readEvents(t, r.Dir())
+	if len(events) != 4 {
+		t.Fatalf("got %d index lines, want 4 (2 exchanges x request+response)", len(events))
+	}
+
+	want := []struct {
+		seq      int
+		typ      string
+		bodyFile string
+	}{
+		{1, "request", "001.request.json"},
+		{1, "response", "001.response.sse"},
+		{2, "request", "002.request.json"},
+		{2, "response", "002.response.json"},
+	}
+	for i, w := range want {
+		got := events[i]
+		if got.Seq != w.seq || got.Type != w.typ {
+			t.Errorf("line %d: seq/type = %d/%q, want %d/%q", i+1, got.Seq, got.Type, w.seq, w.typ)
+		}
+		if got.BodyFile != w.bodyFile {
+			t.Errorf("line %d: body_file = %q, want %q", i+1, got.BodyFile, w.bodyFile)
+		}
+		if _, err := os.Stat(filepath.Join(r.Dir(), got.BodyFile)); err != nil {
+			t.Errorf("line %d: body_file %q does not exist: %v", i+1, got.BodyFile, err)
+		}
+		if got.Time.IsZero() {
+			t.Errorf("line %d: time not recorded", i+1)
+		}
+	}
+
+	// Request-only and response-only fields must not bleed across types.
+	if req := eventFor(t, r.Dir(), "request", 2); req.Method != "POST" || req.URL != "/v1/messages?beta=true" {
+		t.Errorf("request event = %s %s, want POST /v1/messages?beta=true", req.Method, req.URL)
+	} else if req.Status != 0 {
+		t.Errorf("request event carries a status: %d", req.Status)
+	}
+	if resp := eventFor(t, r.Dir(), "response", 2); resp.Status != 429 {
+		t.Errorf("response status = %d, want 429", resp.Status)
+	} else if resp.Method != "" || resp.URL != "" {
+		t.Errorf("response event carries request fields: %s %s", resp.Method, resp.URL)
+	}
+}
+
+// TestExchangeIndexRecordsTTFB checks that the response line carries the
+// latency the old per-exchange files never recorded anywhere.
+func TestExchangeIndexRecordsTTFB(t *testing.T) {
+	now := time.Date(2026, 9, 2, 8, 5, 21, 0, time.UTC)
+	clk := func() time.Time { return now }
+
+	dir := t.TempDir()
+	r, err := New(dir, "claude", "v0", withClock(clk))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ex := r.Begin("POST", "/v1/messages", http.Header{}, nil)
+	now = now.Add(1500 * time.Millisecond) // upstream took 1.5s to first byte
+	writeAndClose(t, ex.ResponseWriter(200, http.Header{"Content-Type": {"application/json"}}), `{}`)
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if got := eventFor(t, r.Dir(), "response", 1).TTFBMs; got != 1500 {
+		t.Errorf("ttfb_ms = %d, want 1500", got)
+	}
+}
+
+// TestExchangeIndexIsAppendOnlyUnderConcurrency drives parallel in-flight
+// exchanges (what a real agent's parallel tool calls produce) and asserts
+// every line survived intact — an interleaved write would show up as a line
+// that will not parse.
+func TestExchangeIndexIsAppendOnlyUnderConcurrency(t *testing.T) {
+	r := newTestRecorder(t)
+
+	const n = 32
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ex := r.Begin("POST", "/v1/messages", http.Header{"X-Api-Key": {"sk-ant-secret"}}, []byte(`{}`))
+			w := ex.ResponseWriter(200, http.Header{"Content-Type": {"application/json"}})
+			w.Write([]byte(`{}`))
+			w.Close()
+		}()
+	}
+	wg.Wait()
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	events := readEvents(t, r.Dir()) // fails the test on any torn line
+	if len(events) != 2*n {
+		t.Fatalf("got %d index lines, want %d", len(events), 2*n)
+	}
+	seen := map[string]bool{}
+	for _, ev := range events {
+		key := fmt.Sprintf("%d/%s", ev.Seq, ev.Type)
+		if seen[key] {
+			t.Errorf("duplicate index line for %s", key)
+		}
+		seen[key] = true
+	}
+	for i := 1; i <= n; i++ {
+		for _, typ := range []string{"request", "response"} {
+			if !seen[fmt.Sprintf("%d/%s", i, typ)] {
+				t.Errorf("missing %s line for exchange %d", typ, i)
+			}
 		}
 	}
 }
@@ -189,16 +369,9 @@ func TestCorpusHasNoCredentials(t *testing.T) {
 
 	// The header *keys* must still be visible (shape of auth used is
 	// legitimate debugging info), only the values are secret.
-	hdrData, err := os.ReadFile(filepath.Join(r.Dir(), "001.request.headers.json"))
-	if err != nil {
-		t.Fatalf("reading request headers file: %v", err)
-	}
-	var hdrRec requestRecord
-	if err := json.Unmarshal(hdrData, &hdrRec); err != nil {
-		t.Fatalf("unmarshaling request headers file: %v", err)
-	}
+	req := eventFor(t, r.Dir(), "request", 1)
 	for _, key := range []string{"Authorization", "X-Api-Key", "Anthropic-Api-Key"} {
-		vals, ok := hdrRec.Header[key]
+		vals, ok := req.Header[key]
 		if !ok {
 			t.Errorf("expected header key %q to survive redaction", key)
 			continue
@@ -207,10 +380,10 @@ func TestCorpusHasNoCredentials(t *testing.T) {
 			t.Errorf("header %q = %v, want [%q]", key, vals, redactedValue)
 		}
 	}
-	if got := hdrRec.Header["X-Totally-Fine-Key"]; len(got) != 1 || got[0] != "not-a-credential-header" {
+	if got := req.Header["X-Totally-Fine-Key"]; len(got) != 1 || got[0] != "not-a-credential-header" {
 		t.Errorf("non-credential header was mangled: %v", got)
 	}
-	if got := hdrRec.Header["Anthropic-Beta"]; len(got) != 1 || got[0] != "oauth-2025-04-20" {
+	if got := req.Header["Anthropic-Beta"]; len(got) != 1 || got[0] != "oauth-2025-04-20" {
 		t.Errorf("non-credential header Anthropic-Beta was mangled: %v", got)
 	}
 }
@@ -222,9 +395,9 @@ func TestRedactionIsPositiveOptOut(t *testing.T) {
 	r.Begin("POST", "/v1/messages", http.Header{"X-Api-Key": {apiKey}}, nil)
 	r.Close()
 
-	data, err := os.ReadFile(filepath.Join(r.Dir(), "001.request.headers.json"))
+	data, err := os.ReadFile(filepath.Join(r.Dir(), exchangeLogName))
 	if err != nil {
-		t.Fatalf("reading headers file: %v", err)
+		t.Fatalf("reading %s: %v", exchangeLogName, err)
 	}
 	if !strings.Contains(string(data), apiKey) {
 		t.Errorf("WithRedaction(false) should have left the credential value intact")
@@ -243,9 +416,9 @@ func TestDefaultIsRedacted(t *testing.T) {
 	r.Begin("POST", "/v1/messages", http.Header{"X-Api-Key": {apiKey}}, nil)
 	r.Close()
 
-	data, err := os.ReadFile(filepath.Join(r.Dir(), "001.request.headers.json"))
+	data, err := os.ReadFile(filepath.Join(r.Dir(), exchangeLogName))
 	if err != nil {
-		t.Fatalf("reading headers file: %v", err)
+		t.Fatalf("reading %s: %v", exchangeLogName, err)
 	}
 	if strings.Contains(string(data), apiKey) {
 		t.Fatalf("default construction (no options) leaked a credential — redaction must default on")

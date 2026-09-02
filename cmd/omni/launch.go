@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/signal"
@@ -34,11 +35,14 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 		return exitConfig
 	}
 
-	// Recorder. Failing to record must never become the user's outage
+	// Recorder. Recording is opt-in (`--record`, or record.enabled in
+	// config) and additionally requires a mode that tees traffic at all.
+	//
+	// Failing to record must never become the user's outage
 	// (internal-docs/05-constraints.md §5), so a recorder that cannot be
 	// created downgrades to no recording rather than aborting the session.
 	var rec *record.Recorder
-	if eff.Mode.V != config.ModeOff {
+	if eff.Mode.V != config.ModeOff && eff.RecordEnabled.V {
 		home, herr := config.Home()
 		if herr != nil {
 			errorf("warning: cannot resolve omni home, recording disabled: %v", herr)
@@ -76,6 +80,25 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 				return
 			}
 			errorf("route: %s -> %s via %s", from, to, backend)
+		}
+		// Rendering lives here rather than in the proxy, on the same split
+		// as OnRoute: the proxy reports the fact, cmd/omni decides how it
+		// reads. The agent will print its own retry counter a moment later
+		// and say nothing about where the request went — this line is the
+		// only thing that names the backend.
+		router.OnRouteFailure = func(f proxy.RouteFailure) {
+			where := "the default upstream"
+			if f.Backend != "" {
+				where = fmt.Sprintf("backend %q", f.Backend)
+			}
+			msg := fmt.Sprintf("route: %s returned %d for %s", where, f.Status, f.To)
+			if f.From != f.To {
+				msg += fmt.Sprintf(" (routed from %s)", f.From)
+			}
+			if f.Body != "" {
+				msg += ": " + f.Body
+			}
+			errorf("%s", msg)
 		}
 	}
 
@@ -153,6 +176,48 @@ func childEnv(base []string, userEnv map[string]string, steering []string) []str
 	return append(env, steering...)
 }
 
+// printCredentialSources reports where each routed backend's key comes from,
+// by name and never by value.
+//
+// A dry run that listed the routes but not their credentials would print a
+// plan that a real launch then refuses to carry out — resolveRouter treats a
+// missing key as fatal once a rule targets the backend. Since a key may now
+// come from either the environment or ~/.omni/credentials, "which one am I
+// actually getting?" is a question --dry-run is the natural place to answer.
+func printCredentialSources(out io.Writer, eff *config.Effective, rules []config.ResolvedRule) {
+	seen := map[string]bool{}
+	var lines []string
+	for _, r := range rules {
+		b := r.Backend
+		if b == nil || b.APIKeyEnv == "" || seen[b.Name] {
+			continue
+		}
+		seen[b.Name] = true
+		if _, source, ok := eff.SecretFor(b.APIKeyEnv); ok {
+			// SecretFor reports "$NAME" for the environment and a path for
+			// the credentials file; say which in words rather than printing
+			// the variable's name twice.
+			from := source
+			if source == "$"+b.APIKeyEnv {
+				from = "the environment"
+			}
+			lines = append(lines, fmt.Sprintf("  %s: $%s from %s", b.Name, b.APIKeyEnv, from))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf(
+			"  %s: $%s is set neither in the environment nor in %s — this route would fail to launch",
+			b.Name, b.APIKeyEnv, eff.CredentialsPathForMessage(),
+		))
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "credentials:\n")
+	for _, l := range lines {
+		fmt.Fprintln(out, l)
+	}
+}
+
 // dryRun prints what would happen without launching anything.
 // See internal-docs/09-cli-design.md §6.
 func dryRun(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath string) int {
@@ -182,9 +247,21 @@ func dryRun(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 		for _, is := range issues {
 			fmt.Fprintf(out, "  %s: %s\n", is.Level, is.Message)
 		}
+		printCredentialSources(out, eff, rules)
 	}
-	if home, err := config.Home(); err == nil {
-		fmt.Fprintf(out, "sessions -> %s\n", filepath.Join(home, "sessions"))
+	// Only advertise a session path when a session would actually be
+	// written. Printing one unconditionally reads as a promise that this run
+	// leaves a recording behind, which since recording became opt-in it does
+	// not.
+	switch {
+	case eff.Mode.V == config.ModeOff:
+		fmt.Fprintf(out, "recording: off (mode is \"off\")\n")
+	case !eff.RecordEnabled.V:
+		fmt.Fprintf(out, "recording: off — enable with --record, or record.enabled in config\n")
+	default:
+		if home, err := config.Home(); err == nil {
+			fmt.Fprintf(out, "recording -> %s\n", filepath.Join(home, "sessions"))
+		}
 	}
 	return exitOK
 }

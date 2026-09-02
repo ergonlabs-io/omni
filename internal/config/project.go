@@ -5,8 +5,8 @@ import "fmt"
 // loadProjectConfig reads and filters ./.omni.conf, the per-project,
 // repo-local config layer. This is the SECURITY-CRITICAL boundary in this
 // package: a repo you `cd` into and did not write is untrusted input, and
-// must not be able to change omni's binary, upstream, redaction, traffic
-// scope, or proxy bind address. Only mode, route, and record.bodies are
+// must not be able to change omni's binary, upstream, redaction, recording,
+// traffic scope, or proxy bind address. Only mode and route are
 // honored; every other key found in the file is dropped and reported as a
 // LevelWarning Issue (not an error — a stray key here is a mistake, not a
 // reason to fail the launch).
@@ -39,7 +39,7 @@ func loadProjectConfig(path string) (rawAgent, *fileLoad, error) {
 			fl.issues = append(fl.issues, Issue{
 				Path: p,
 				Message: fmt.Sprintf(
-					"%q is not permitted in project config (./.omni.conf may only set mode, route, record.bodies) — ignored",
+					"%q is not permitted in project config (./.omni.conf may only set mode and route) — ignored",
 					p,
 				),
 				Source: fl.src(p),

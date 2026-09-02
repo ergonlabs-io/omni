@@ -36,6 +36,8 @@ var flagSpec = map[string]bool{ // name -> takes a value
 	"-h":            false,
 	"--version":     false,
 	"--record-only": false,
+	"--record":      false,
+	"--no-record":   false,
 }
 
 // Invocation is the parsed command line.

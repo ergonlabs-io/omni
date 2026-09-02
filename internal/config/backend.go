@@ -34,10 +34,11 @@ type Backend struct {
 	// serving /v1/messages is declared as the part before /v1.
 	BaseURL string
 	// APIKeyEnv names the environment variable holding this backend's
-	// credential. omni reads it from the environment at launch and never
-	// from config. Empty is legal only for a loopback endpoint (a local
-	// model server wanting no auth) or for a backend that is the agent's
-	// own upstream — see AuthPolicy.
+	// credential. At launch omni looks it up in its own environment and,
+	// failing that, in ~/.omni/credentials — never in config, which is what
+	// makes this a variable *name* rather than a key. Empty is legal only
+	// for a loopback endpoint (a local model server wanting no auth) or for
+	// a backend that is the agent's own upstream — see AuthPolicy.
 	APIKeyEnv string
 	// APIStyle is the wire format this backend speaks. It must match the
 	// agent's own style: omni routes, it does not translate (see

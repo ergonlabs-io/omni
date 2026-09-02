@@ -75,3 +75,23 @@ func writeAgentSection(t *testing.T, home, agent, body string) {
 	out := "[agents." + agent + "]\n" + strings.Join(bare, "\n") + "\n" + strings.Join(tables, "\n")
 	writeTestFile(t, GlobalConfigPath(home), out)
 }
+
+// testUnsetEnv removes names from the environment for the duration of the
+// test, restoring whatever was there afterwards.
+//
+// It exists for the same reason testHome and testCWD do. A developer running
+// these tests very plausibly has OPENROUTER_API_KEY exported in the shell
+// they ran `go test` from — that is the whole point of the variable — and a
+// test asserting "this key resolves from the credentials file" would then
+// pass or fail based on the machine it ran on. t.Setenv is called first
+// purely for its cleanup registration; the Unsetenv after it is what makes
+// the variable genuinely absent rather than merely empty.
+func testUnsetEnv(t *testing.T, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		t.Setenv(n, "")
+		if err := os.Unsetenv(n); err != nil {
+			t.Fatalf("unset %s: %v", n, err)
+		}
+	}
+}

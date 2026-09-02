@@ -40,7 +40,7 @@ Codex is an error, not a silent no-op:
 ```
 omni: cannot apply --model-map for agent "codex"
   model rewriting is Anthropic-only in this version.
-  codex sessions are recorded but not rewritten.
+  codex traffic passes through unchanged.
 ```
 
 Recording works normally: requests, responses, headers, and token usage are

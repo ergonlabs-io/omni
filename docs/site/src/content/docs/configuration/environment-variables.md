@@ -27,14 +27,15 @@ prefix `OMNI_`.
 | Config key | Variable |
 |---|---|
 | `mode` | `OMNI_MODE` |
+| `record.enabled` | `OMNI_RECORD__ENABLED` |
 | `redact` | `OMNI_REDACT` |
 | `binary` (agent-scoped) | `OMNI_AGENTS__CLAUDE__BINARY` |
 | `upstream` (agent-scoped) | `OMNI_AGENTS__CLAUDE__UPSTREAM` |
 
 A double underscore is the separator; a single underscore is part of a key's
 own name. No key in the current schema has an underscore in its own name, so
-in practice `__` only ever separates the `AGENTS` prefix from an agent name
-and its key.
+in practice `__` separates the `AGENTS` prefix from an agent name and its
+key, and `RECORD` from its sub-key.
 
 ## Scoping to one agent
 
@@ -86,10 +87,11 @@ OMNI_HOME=/tmp/omni-scratch omni init
 OMNI_HOME=/tmp/omni-scratch omni claude
 ```
 
-Everything moves with it: `omni.conf`, `profiles.d/`, the CA directory,
-and `sessions/`. This is the supported way to keep omni's state somewhere other
+Everything moves with it: `omni.conf`, `credentials`, `profiles.d/` and
+`sessions/`. This is the supported way to keep omni's state somewhere other
 than `~/.omni` — for a throwaway experiment, a second identity, or a test
-harness that must not touch your real sessions.
+harness that must not touch your real sessions. Note that the credentials
+file moves too, so a relocated home starts with no stored keys.
 
 Because it decides where config comes from, `OMNI_HOME` is never itself
 treated as a config variable.
@@ -102,6 +104,6 @@ away from being explained:
 
 ```
 mode              "off"             $OMNI_MODE
-record.redact     true              (built-in default)
-redact            true              ~/.omni/omni.conf:20
+record.enabled    true              $OMNI_RECORD__ENABLED
+redact            true              ~/.omni/omni.conf:28
 ```

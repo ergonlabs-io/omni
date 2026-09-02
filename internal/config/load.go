@@ -19,10 +19,13 @@ import (
 // with the flags cmd/omni parsed.
 //
 // Load returns a non-nil error, in which case the returned *Effective must
-// not be used to run the proxy, in exactly one case: some layer contains a
-// credential-shaped value. That is internal-docs/08-configuration.md
-// §Security's "no credentials in config, ever", and this package enforces it
-// at Load rather than only at `omni config check`. Every other problem — an
+// not be used to run the proxy, in two cases: some layer contains a
+// credential-shaped value, or ~/.omni/credentials exists with permissions
+// that let someone other than its owner read it. The first is
+// internal-docs/08-configuration.md §Security's "no credentials in config,
+// ever", and this package enforces it at Load rather than only at `omni
+// config check`; the second is the same rule seen from the other side — the
+// one file that may hold a key has to keep it. Every other problem — an
 // unknown key, a disallowed project-config key, a mode typo — is recorded in
 // Effective.Issues at LevelError or LevelWarning and does not stop Load;
 // that is what `omni config check` reports.
@@ -40,6 +43,13 @@ func Load(agent string) (*Effective, error) {
 // exactly as it will for real users).
 func LoadFrom(home, agent string) (*Effective, error) {
 	e := builtinDefaults(agent)
+
+	// Credentials first: they are not a layer and set nothing, but the
+	// checks below ask whether each backend's key resolves, and an answer
+	// that ignored the file would warn about a credential omni can see.
+	creds, credIssues := loadCredentials(home)
+	e.creds = creds
+	e.Issues = append(e.Issues, credIssues...)
 
 	if err := loadGlobalLayer(e, home, agent); err != nil {
 		return nil, err

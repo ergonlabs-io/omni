@@ -19,7 +19,7 @@ its API calls at that proxy.
 ```
 your terminal ──PTY──▶ claude ──HTTP──▶ omni ──HTTPS──▶ api.anthropic.com
                           │                 │
-                          └─ byte passthrough└─ recorded, then forwarded
+                          └─ byte passthrough└─ inspected, then forwarded
 ```
 
 Those are the two data paths, and they never meet. The terminal path is a
@@ -106,7 +106,10 @@ record ──▶ route ──▶ adapt ──▶ send
 
 `record` is outermost on purpose: it is the first to see a request and the
 last to see a response, so what it captures is what actually crossed the
-wire, not an intermediate form.
+wire, not an intermediate form. The stage only captures when you ask it to —
+recording is opt-in (`--record`, or `record.enabled`); with it off, the stage
+is inert and traffic is forwarded unchanged. See
+[Recorded sessions](../../sessions/recorded-sessions/).
 
 Stages come in two tiers. The **raw tier** works on bytes and headers and
 never decodes a body — recording, metering, logging. The **decoded tier**
