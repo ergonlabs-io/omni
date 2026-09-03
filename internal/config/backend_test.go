@@ -535,3 +535,80 @@ func countIssues(e *Effective, path string) int {
 	}
 	return n
 }
+
+// TestBaseURLTrailingV1Warns is the regression this check exists for. Every
+// provider documents its own base URL with the /v1 included, so that is what
+// gets pasted into base_url -- and omni then joins the agent's /v1/messages
+// onto it and requests /api/v1/v1/messages. The 404 that comes back is an
+// HTML page from the provider's website, which the agent reports as a model
+// problem, so nothing in the visible failure points at base_url.
+func TestBaseURLTrailingV1Warns(t *testing.T) {
+	e := loadWithGlobal(t, `
+[backends.openrouter]
+base_url    = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"
+`)
+	is := issueFor(e, "backends.openrouter.base_url")
+	if is == nil {
+		t.Fatal("no issue for a base_url ending in /v1")
+	}
+	if is.Level != LevelWarning {
+		t.Errorf("Level = %v, want LevelWarning (it must not block a launch)", is.Level)
+	}
+	// The message has to carry both halves: what would actually be requested,
+	// and the base_url that fixes it.
+	if !strings.Contains(is.Message, "https://openrouter.ai/api/v1/v1/messages") {
+		t.Errorf("message does not show the doubled URL: %q", is.Message)
+	}
+	if !strings.Contains(is.Message, `"https://openrouter.ai/api"`) {
+		t.Errorf("message does not show the corrected base_url: %q", is.Message)
+	}
+	// A warning, so the backend still loads and stays usable.
+	if b, ok := e.Backends.V["openrouter"]; !ok {
+		t.Error("backend was dropped by a warning")
+	} else if b.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("BaseURL = %q, want the URL as written (omni must not rewrite it)", b.BaseURL)
+	}
+}
+
+// TestBaseURLFullEndpointWarns covers the other paste: the whole endpoint,
+// not just the version prefix.
+func TestBaseURLFullEndpointWarns(t *testing.T) {
+	e := loadWithGlobal(t, `
+[backends.openrouter]
+base_url    = "https://openrouter.ai/api/v1/messages"
+api_key_env = "OPENROUTER_API_KEY"
+`)
+	is := issueFor(e, "backends.openrouter.base_url")
+	if is == nil {
+		t.Fatal("no issue for a base_url ending in /v1/messages")
+	}
+	if !strings.Contains(is.Message, `"https://openrouter.ai/api"`) {
+		t.Errorf("fix should strip the whole endpoint, got: %q", is.Message)
+	}
+}
+
+// TestBaseURLCorrectIsSilent is the false-positive guard. The check fires on
+// a path *tail*, so a host or path that merely contains "v1" somewhere must
+// stay quiet -- a warning on a working config trains people to ignore them.
+func TestBaseURLCorrectIsSilent(t *testing.T) {
+	for _, base := range []string{
+		"https://openrouter.ai/api",
+		"https://api.anthropic.com",
+		"https://example.com/v1beta",
+		"https://example.com/myv1",
+		"https://v1.example.com",
+		"http://127.0.0.1:11434",
+	} {
+		t.Run(base, func(t *testing.T) {
+			e := loadWithGlobal(t, `
+[backends.b]
+base_url    = "`+base+`"
+api_key_env = "OPENROUTER_API_KEY"
+`)
+			if is := issueFor(e, "backends.b.base_url"); is != nil {
+				t.Errorf("unexpected issue for a correct base_url: %s", is.Message)
+			}
+		})
+	}
+}

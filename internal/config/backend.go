@@ -167,6 +167,9 @@ func applyBackends(e *Effective, raw map[string]rawBackend, loc locator, issues 
 			*issues = append(*issues, *iss)
 			continue
 		}
+		if iss := checkBaseURLPath(path+".base_url", b.BaseURL, source); iss != nil {
+			*issues = append(*issues, *iss)
+		}
 
 		if rb.APIKeyEnv != nil {
 			b.APIKeyEnv = *rb.APIKeyEnv
@@ -244,6 +247,72 @@ func validateBaseURL(path, raw, source string) *Issue {
 			Level:   LevelError,
 		}
 	}
+}
+
+// agentRequestSuffixes are the path tails a base_url must not already end
+// with, longest first so the reported fix strips the whole thing. Anthropic
+// agents request /v1/messages, OpenAI-style ones /v1/chat/completions; both
+// share the /v1 that makes the bare version worth catching too.
+var agentRequestSuffixes = []string{
+	"/v1/messages/count_tokens",
+	"/v1/chat/completions",
+	"/v1/messages",
+	"/v1",
+}
+
+// checkBaseURLPath catches a base_url that already contains the path the
+// agent is going to send.
+//
+// omni forwards by joining the agent's own request path onto base_url
+// (proxy.Server's Rewrite calls httputil.ProxyRequest.SetURL, which joins
+// rather than replaces). So the backend written the way every provider
+// documents its own base URL — "https://openrouter.ai/api/v1", which is
+// therefore what people paste — makes omni request /api/v1/v1/messages.
+//
+// Backends answer that with a 404, and the 404 is usually an HTML page from
+// the provider's *website* rather than a JSON error from its API, so the
+// agent renders it as something unrelated to the URL: Claude Code reports it
+// as "the selected model may not exist". Nothing in that message points at
+// base_url, which makes this expensive to diagnose from the agent's side —
+// and it is entirely predictable from the config alone, which is what earns
+// it a check. Before this, `config check` called such a config "ok".
+//
+// It is a Warning, not an Error: omni does not rewrite a URL the user wrote,
+// and a backend genuinely serving /v1/v1/messages is absurd rather than
+// impossible. Naming the problem and the fix is the whole job; silently
+// correcting the URL would be the worse habit.
+func checkBaseURLPath(path, raw, source string) *Issue {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return nil // validateBaseURL already reported this
+	}
+	trimmed := strings.TrimRight(u.Path, "/")
+	if trimmed == "" {
+		return nil
+	}
+	for _, suffix := range agentRequestSuffixes {
+		if !strings.HasSuffix(trimmed, suffix) {
+			continue
+		}
+		// Show the URL the agent's own request would actually produce, and
+		// the base_url that fixes it. A message that only says "looks wrong"
+		// leaves the reader to work out the join rule for themselves.
+		broken := fmt.Sprintf("%s://%s%s/v1/messages", u.Scheme, u.Host, trimmed)
+		fixed := strings.TrimSuffix(raw, "/")
+		fixed = strings.TrimSuffix(fixed, suffix)
+		return &Issue{
+			Path: path,
+			Message: fmt.Sprintf(
+				"base_url %q already ends in %s, but omni appends the agent's own "+
+					"request path — requests would go to %s, which backends answer "+
+					"with 404. Drop it: base_url = %q",
+				raw, suffix, broken, fixed,
+			),
+			Source: source,
+			Level:  LevelWarning,
+		}
+	}
+	return nil
 }
 
 func didYouMeanBackend(got string, declared map[string]Backend) string {
