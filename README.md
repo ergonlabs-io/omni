@@ -13,7 +13,7 @@ code with each other.
 [![CI](https://github.com/ergonlabs-io/omni/actions/workflows/ci.yml/badge.svg)](https://github.com/ergonlabs-io/omni/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/ergonlabs-io/omni)](go.mod)
-![Status: alpha](https://img.shields.io/badge/status-phase%200%2B2%20%C2%B7%20alpha-orange.svg)
+![Status: beta](https://img.shields.io/badge/status-phase%200%2B2%20%C2%B7%20beta-blue.svg)
 ![Platform: macOS and Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)
 
 </div>
@@ -24,11 +24,11 @@ omni --record claude    # same, and keep a session recording
 omni --dry-run claude   # show what would happen; launch nothing
 ```
 
-> [!WARNING]
-> **Phase 0/2: recording, plus model routing. Not yet ready for daily use.**
+> [!NOTE]
+> **Recording and model routing work today.**
 >
 > The CLI, the configuration system, Tier 1 interception, session recording,
-> and model routing are real and work today. The capability adapter and
+> and model routing are real and in daily use. The capability adapter and
 > full-traffic MITM are designed but **not wired in**. See
 > [What works today](#what-works-today) for the line-by-line status.
 
