@@ -171,6 +171,14 @@ jobs:
           done
           [ -n "$ok" ] || { echo "::error::install.sh could not install $TAG"; exit 1; }
           "$RUNNER_TEMP/bin/omni" --version
-          for f in omni.conf agents/claude.conf agents/codex.conf; do
-            [ -f "$OMNI_HOME/$f" ] || { echo "::error::omni init did not create $f"; exit 1; }
+          # The tree `omni init` actually creates -- kept in step with the
+          # ASCII tree in internal/config/init.go. The agents/*.conf this
+          # used to assert stopped existing when the config surface was cut
+          # to a single omni.conf; because the release workflow had never
+          # run, the stale assertion sat here undetected and failed the
+          # first real release after the artifacts were already published.
+          [ -f "$OMNI_HOME/omni.conf" ] \
+            || { echo "::error::omni init did not create omni.conf"; exit 1; }
+          for d in profiles.d sessions; do
+            [ -d "$OMNI_HOME/$d" ] || { echo "::error::omni init did not create $d/"; exit 1; }
           done
