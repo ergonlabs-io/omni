@@ -38,13 +38,20 @@ redact = true
 # so point base_url at a native endpoint or at a translating gateway — a
 # mismatch is rejected at load rather than forwarded and hoped over.
 #
+# base_url is the origin plus any prefix, and stops there: omni appends the
+# agent's own request path. The URL a provider prints in its own docs
+# usually includes the version segment ("https://openrouter.ai/api/v1"),
+# which is one segment too many here — it would make omni request
+# /api/v1/v1/messages. `omni config check` warns if you leave it on.
+#
 # The credential is named, never written here: api_key_env holds a variable
 # name, and a key pasted into this file is refused at load. At launch omni
 # looks that variable up first in its own environment and then in
-# ~/.omni/credentials, a plain NAME=value file that must be mode 0600:
+# ~/.omni/credentials — a plain NAME=value file that `omni init` has
+# already created next to this one, at mode 0600, with the line you want
+# sitting in it commented out:
 #
-#   printf 'OPENROUTER_API_KEY=sk-or-v1-...\n' > ~/.omni/credentials
-#   chmod 600 ~/.omni/credentials
+#   OPENROUTER_API_KEY=sk-or-v1-...
 #
 # The difference between the two is who else sees the key. A variable you
 # export is inherited by the agent omni launches; one kept in the
@@ -52,7 +59,7 @@ redact = true
 # environment. Omit api_key_env only for a loopback endpoint wanting no auth.
 #
 # [backends.openrouter]
-# base_url    = "https://openrouter.ai/api"   # serves /v1/messages natively
+# base_url    = "https://openrouter.ai/api"   # origin + prefix; see above
 # api_key_env = "OPENROUTER_API_KEY"
 # api_style   = "anthropic"
 # model       = "minimax/minimax-m3:free"     # what to ask this backend for

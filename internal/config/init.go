@@ -10,6 +10,16 @@ import (
 //go:embed templates/omni.conf.tmpl
 var omniConfTemplate []byte
 
+// The credentials file ships as comments only. It exists so the mode is
+// right before there is anything in it to protect: the file has to be 0600
+// or stricter or omni refuses to read it at all, and a user who creates it
+// by hand at the moment they first need a key is exactly the user who hits
+// that refusal. Writing it at init makes uncommenting a line the whole
+// procedure. writeFile never clobbers, so a real key here is safe.
+//
+//go:embed templates/credentials.tmpl
+var credentialsTemplate []byte
+
 // Permissions are set explicitly at creation rather than left to umask.
 // (umask can only clear bits, never set them, so an explicit mode is a
 // ceiling — but a permissive umask must not be able to widen these.)
@@ -38,6 +48,7 @@ const (
 //
 //	~/.omni/
 //	├── omni.conf          (everything: defaults, backends, per-agent)
+//	├── credentials        (0600, comments only until you add a key)
 //	├── profiles.d/
 //	└── sessions/
 //
@@ -108,6 +119,9 @@ func Init(home string) ([]string, error) {
 
 	if err := writeFile(GlobalConfigPath(home), omniConfTemplate, filePerm); err != nil {
 		return created, fmt.Errorf("config: init %s: %w", GlobalConfigPath(home), err)
+	}
+	if err := writeFile(CredentialsPath(home), credentialsTemplate, credentialsPerm); err != nil {
+		return created, fmt.Errorf("config: init %s: %w", CredentialsPath(home), err)
 	}
 
 	return created, nil

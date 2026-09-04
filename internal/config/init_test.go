@@ -137,3 +137,74 @@ func TestInitBootstrappedConfigLoads(t *testing.T) {
 		t.Errorf("codex mode = %q, want record", eCodex.Mode.V)
 	}
 }
+
+// TestInitCreatesCredentialsAt0600 pins the reason the file ships at all.
+// A credentials file that anyone else can read is refused outright
+// (LevelFatal), and the user who creates it by hand is doing so at the
+// moment they first have a key to put in it — which is the worst moment to
+// meet a permission error. Shipping it pre-created at the right mode makes
+// uncommenting a line the whole procedure.
+func TestInitCreatesCredentialsAt0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	home := testHome(t)
+	if _, err := Init(home); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	fi, err := os.Stat(CredentialsPath(home))
+	if err != nil {
+		t.Fatalf("credentials file not created: %v", err)
+	}
+	// Stricter is fine (a tight umask); looser is the whole bug.
+	if perm := fi.Mode().Perm(); perm&^credentialsPerm != 0 {
+		t.Errorf("credentials is %04o, want %04o or stricter", perm, credentialsPerm)
+	}
+}
+
+// TestInitNeverClobbersCredentials is the one that would actually hurt.
+// Init is safe to call on every launch for auto-bootstrap, so if it
+// rewrote this file it would silently destroy a real key on the next
+// `omni claude`.
+func TestInitNeverClobbersCredentials(t *testing.T) {
+	home := testHome(t)
+	if _, err := Init(home); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	const secret = "OPENROUTER_API_KEY=a-real-key\n"
+	if err := os.WriteFile(CredentialsPath(home), []byte(secret), credentialsPerm); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := Init(home); err != nil {
+		t.Fatalf("second Init: %v", err)
+	}
+	got, err := os.ReadFile(CredentialsPath(home))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != secret {
+		t.Fatalf("Init overwrote a credentials file holding a key:\n%s", got)
+	}
+}
+
+// TestInitCredentialsLoadClean checks the shipped file is not merely
+// present but inert: comments only, so it parses to an empty set with no
+// issues, and the example key in it does not trip the credential-shaped
+// value detector that guards config.
+func TestInitCredentialsLoadClean(t *testing.T) {
+	home := testHome(t)
+	testCWD(t)
+	if _, err := Init(home); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	e, err := LoadFrom(home, "claude")
+	if err != nil {
+		t.Fatalf("Load on a freshly initialized home: %v", err)
+	}
+	for _, is := range e.Check() {
+		t.Errorf("fresh home is not clean: %s", is)
+	}
+	if names := e.creds.Names(); len(names) != 0 {
+		t.Errorf("shipped credentials defines %v, want nothing until the user edits it", names)
+	}
+}
