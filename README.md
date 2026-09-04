@@ -261,7 +261,7 @@ Anything unmatched goes to the agent's own upstream, untouched.
 ```toml
 # ~/.omni/omni.conf — one file; backends are global, rules are per-agent
 [backends.openrouter]
-base_url    = "https://openrouter.ai/api"   # serves the Messages API at /v1/messages
+base_url    = "https://openrouter.ai/api"   # origin + prefix only; omni appends /v1/messages
 api_key_env = "OPENROUTER_API_KEY"          # the name; never the key itself
 api_style   = "anthropic"
 model       = "minimax/minimax-m3:free"
@@ -277,8 +277,17 @@ model = "claude-sonnet-5"                   # same provider, cheaper model
 
 Rules are ordered because globs overlap, and a TOML table has no defined
 iteration order — a map of patterns would resolve differently from run to
-run. `omni config check` rejects a rule naming an unknown backend and warns
-about one an earlier rule already covers.
+run. `omni config check` rejects a rule naming an unknown backend, warns
+about one an earlier rule already covers, and warns when a `base_url`
+already ends in the path the agent is going to send.
+
+That last one is worth knowing before you hit it. omni forwards by
+appending the agent's own request path to `base_url`, so the URL every
+provider prints in its own docs — `https://openrouter.ai/api/v1` — is one
+segment too long here and makes omni request `/api/v1/v1/messages`. The 404
+that comes back is the provider's HTML website, not its API, so the agent
+reports it as something unrelated: Claude Code calls it a missing model.
+Give `base_url` the origin and any prefix, and let omni add the rest.
 
 omni routes; it does not translate. A backend must speak the agent's own wire
 format, so `api_style` is checked against the agent's and a mismatch is
