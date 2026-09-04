@@ -104,5 +104,33 @@ redact = true
 
 [agents.codex]
 # mode = "record"
-# Routing is Anthropic-only for now; a rule here is rejected with a clear
-# message rather than silently ignored.
+
+# Codex does not follow OPENAI_BASE_URL for its model calls, so omni cannot
+# steer it by environment the way it steers Claude Code. Pointing Codex at
+# omni is therefore something you do once, by hand, in ~/.codex/config.toml.
+#
+# Because that file names a URL, omni's port cannot be the ephemeral one it
+# picks per launch. Pin it here first:
+#
+# listen_port = 8787
+#
+# then add a provider to ~/.codex/config.toml pointing at it:
+#
+#   model_provider = "omni"
+#
+#   [model_providers.omni]
+#   name     = "omni"
+#   base_url = "http://127.0.0.1:8787"
+#   env_key  = "OPENAI_API_KEY"
+#   wire_api = "responses"
+#
+# This is API-key auth: a Codex signed in through ChatGPT sends its model
+# traffic somewhere omni cannot reach, and no setting here changes that.
+#
+# With that in place, rules below apply to Codex exactly as they do to
+# Claude — within the OpenAI wire format. A rule pointing at an Anthropic
+# backend is still refused: omni routes, it does not translate.
+#
+# [[agents.codex.route]]
+# match = "gpt-5*"
+# model = "gpt-5-mini"

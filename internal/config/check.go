@@ -200,7 +200,7 @@ func checkRoutingCapability(e *Effective) {
 	e.checkIssues = append(e.checkIssues, Issue{
 		Path: "route",
 		Message: fmt.Sprintf(
-			"cannot apply routing rules for agent %q: model rewriting is not supported for its API style (%s) — traffic passes through unchanged",
+			"cannot apply routing rules for agent %q: omni does not decode its API style (%s), so the rules cannot be honored and the launch is refused",
 			e.Agent, p.APIStyle,
 		),
 		Source: e.Routes.Source,

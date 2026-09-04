@@ -1,5 +1,7 @@
 package config
 
+import "fmt"
+
 // locator returns the provenance string for a dotted, layer-local path
 // (e.g. "mode", "record.enabled") — typically "file:line" via sourceAt, or a
 // fixed label for non-file layers (env, CLI overrides).
@@ -46,6 +48,9 @@ func applyAgent(e *Effective, r rawAgent, loc locator, issues *[]Issue) {
 	if r.Upstream != nil {
 		e.Upstream = Value[string]{*r.Upstream, loc("upstream")}
 	}
+	if r.ListenPort != nil {
+		applyListenPort(e, *r.ListenPort, loc("listen_port"), issues)
+	}
 	applyRoutes(e, r.Route, loc, issues)
 	applyEnv(e, r.Env, loc)
 }
@@ -82,4 +87,24 @@ func applyEnv(e *Effective, r map[string]string, loc locator) {
 		merged[k] = v
 	}
 	e.Env = Value[map[string]string]{merged, loc("env")}
+}
+
+// applyListenPort validates a pinned proxy port.
+//
+// Only the port is configurable, never the host: the bind stays on
+// 127.0.0.1, so no setting here can expose a proxy that forwards a
+// credential to the network. Ports below 1024 are refused because omni does
+// not run privileged and binding one would fail at launch with a far less
+// obvious message than this.
+func applyListenPort(e *Effective, port int, source string, issues *[]Issue) {
+	if port < 1024 || port > 65535 {
+		*issues = append(*issues, Issue{
+			Path:    "listen_port",
+			Message: fmt.Sprintf("listen_port %d is out of range (want 1024-65535)", port),
+			Source:  source,
+			Level:   LevelError,
+		})
+		return
+	}
+	e.ListenPort = Value[int]{port, source}
 }

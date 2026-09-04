@@ -162,8 +162,15 @@ func routableRequest(r *http.Request) bool {
 		return false
 	}
 	p := strings.TrimSuffix(r.URL.Path, "/")
+	// Anthropic Messages, then the OpenAI-style endpoints. Codex posts to
+	// /responses (the path is relative to whatever base_url its config
+	// names, so the /v1 may or may not be present) — matching on the suffix
+	// covers both shapes. Verified against a recorded Codex request: a
+	// 53KB body whose top-level "model" is the field routing rewrites.
 	return strings.HasSuffix(p, "/v1/messages") ||
-		strings.HasSuffix(p, "/v1/messages/count_tokens")
+		strings.HasSuffix(p, "/v1/messages/count_tokens") ||
+		strings.HasSuffix(p, "/responses") ||
+		strings.HasSuffix(p, "/chat/completions")
 }
 
 // RoutingMiddleware rewrites the model name on Anthropic Messages requests

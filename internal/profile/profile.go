@@ -30,7 +30,15 @@ const (
 )
 
 // CanRewrite reports whether omni can decode and mutate bodies in this style.
-func (s APIStyle) CanRewrite() bool { return s == StyleAnthropic }
+//
+// Both styles omni models put the model name in a top-level "model" string,
+// which is the only field routing touches — see proxy.modelField, which
+// splices that one value and leaves every other byte alone. Passthrough is
+// excluded because an unmodeled body is exactly the one omni promised not
+// to decode.
+func (s APIStyle) CanRewrite() bool {
+	return s == StyleAnthropic || s == StyleOpenAI
+}
 
 // Profile describes one supported agent.
 type Profile struct {

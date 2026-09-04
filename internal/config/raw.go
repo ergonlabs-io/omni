@@ -33,11 +33,15 @@ type rawRecord struct {
 // layer (./.omni.conf) decodes into the same shape, with its keys at the
 // top level and filtered down to the allowlist — see loadProjectConfig.
 type rawAgent struct {
-	Mode     *string    `toml:"mode"`
-	Redact   *bool      `toml:"redact"`
-	Binary   *string    `toml:"binary"`
-	Upstream *string    `toml:"upstream"`
-	Route    []rawRoute `toml:"route"`
+	Mode     *string `toml:"mode"`
+	Redact   *bool   `toml:"redact"`
+	Binary   *string `toml:"binary"`
+	Upstream *string `toml:"upstream"`
+	// ListenPort pins omni's loopback port for this agent. Only the port is
+	// configurable: the host stays 127.0.0.1, so this cannot put a
+	// credential-bearing proxy on the network.
+	ListenPort *int       `toml:"listen_port"`
+	Route      []rawRoute `toml:"route"`
 
 	Record rawRecord `toml:"record"`
 

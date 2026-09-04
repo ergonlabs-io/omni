@@ -71,6 +71,17 @@ model = "claude-sonnet-5"
 // TestRoutingCapability checks that routing rules on codex (openai style,
 // cannot rewrite) is flagged as an error naming the limitation, per
 // internal-docs/08-configuration.md's `config check` semantics.
+// TestRoutingCapability pins what a codex rule may and may not do.
+//
+// Rewriting for the OpenAI style landed once Codex's request was actually
+// observed: a POST to /responses whose top-level "model" is the single
+// field routing splices. So a same-style rule now resolves instead of being
+// refused.
+//
+// The security property this file cares about is unchanged and asserted
+// below: a rule may not cross wire formats. Routing a codex rule at an
+// Anthropic backend would require translation, which omni does not do, and
+// is still refused.
 func TestRoutingCapability(t *testing.T) {
 	home := testHome(t)
 	testCWD(t)
@@ -83,19 +94,36 @@ model = "gpt-5-mini"
 	if err != nil {
 		t.Fatalf("Load: unexpected error: %v", err)
 	}
-	found := false
 	for _, is := range e.Check() {
 		if is.Path == "route" && is.Level == LevelError {
+			t.Errorf("same-style codex rule should now resolve, got: %+v", is)
+		}
+	}
+
+	// Crossing styles remains refused: that is translation, not routing.
+	home2 := testHome(t)
+	writeTestFile(t, GlobalConfigPath(home2), `
+[backends.anth]
+base_url    = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"
+api_style   = "anthropic"
+
+[[agents.codex.route]]
+match   = "gpt-5"
+backend = "anth"
+`)
+	e2, err := LoadFrom(home2, "codex")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	_, issues := e2.Resolve("openai")
+	found := false
+	for _, is := range issues {
+		if is.Level == LevelError && strings.Contains(is.Message, "does not translate") {
 			found = true
-			if !strings.Contains(is.Message, "codex") {
-				t.Errorf("message should name the agent: %q", is.Message)
-			}
 		}
 	}
 	if !found {
-		t.Errorf("expected a LevelError route issue for codex, got: %+v", e.Check())
-	}
-	if e.HasFatal() {
-		t.Errorf("routing capability mismatch should not be Fatal (does not block Load), got: %+v", e.Check())
+		t.Errorf("cross-style codex rule must still be refused, got: %+v", issues)
 	}
 }

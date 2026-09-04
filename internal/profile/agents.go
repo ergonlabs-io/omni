@@ -21,16 +21,28 @@ func init() {
 	})
 
 	register(&Profile{
-		Name:       "codex",
-		Binary:     "codex",
-		Desc:       "Codex",
-		BaseURLEnv: "OPENAI_BASE_URL", // [ASSUMED] — Phase 0 must confirm
+		Name:   "codex",
+		Binary: "codex",
+		Desc:   "Codex",
+		// OPENAI_BASE_URL is observed, not assumed — and it is not enough.
+		// Codex reads it, but under ChatGPT auth it redirects only the
+		// ancillary endpoints (plugins, analytics, MCP, settings). The model
+		// call follows the base_url of the [model_providers.*] entry in
+		// Codex's own config, and nothing else moves it. `chatgpt_base_url`
+		// does not move it either.
+		//
+		// It is kept because it is correct for API-key auth and costs
+		// nothing, but it must not be read as "codex is intercepted". Making
+		// that true needs the user to point a model_provider at omni against
+		// a pinned listen_port. Verified against codex 0.112.0: a POST to
+		// /responses, plain HTTP, 53KB body, top-level "model".
+		BaseURLEnv: "OPENAI_BASE_URL",
 		Upstream:   "https://api.openai.com",
 		APIStyle:   StyleOpenAI,
-		// [ASSUMED] Codex is Rust. If it uses rustls with bundled webpki-roots
-		// it ignores every CA env var and Tier 2 is impossible. Left empty
-		// until Phase 0 determines this: SupportsTier2() == false means
-		// --all-traffic errors clearly instead of silently not intercepting.
+		// Confirmed Rust, and the binary carries rustls and its own webpki
+		// trust anchors, which is the case that ignores every CA env var.
+		// Tier 2 stays unsupported: SupportsTier2() == false makes
+		// --all-traffic error clearly instead of silently not intercepting.
 		TrustEnv: nil,
 	})
 }
