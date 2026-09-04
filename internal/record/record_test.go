@@ -548,3 +548,29 @@ func TestCloseIsIdempotent(t *testing.T) {
 		t.Fatalf("second Close: %v", err)
 	}
 }
+
+// TestExchangesCount pins the accessor that lets a caller tell an empty
+// session from a real one. Both leave a directory, a meta.json and a zero
+// exit status, so without this the difference is invisible until someone
+// goes looking for a recording that was never captured.
+func TestExchangesCount(t *testing.T) {
+	r := newTestRecorder(t)
+
+	if got := r.Exchanges(); got != 0 {
+		t.Errorf("a fresh recorder reports %d exchanges, want 0", got)
+	}
+	for i := 1; i <= 3; i++ {
+		r.Begin("POST", "/v1/messages", nil, []byte(`{"model":"m"}`))
+		if got := r.Exchanges(); got != i {
+			t.Errorf("after %d Begin calls, Exchanges() = %d", i, got)
+		}
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// The count has to survive Close: the caller checks it from the same
+	// defer that closed the recorder.
+	if got := r.Exchanges(); got != 3 {
+		t.Errorf("after Close, Exchanges() = %d, want 3", got)
+	}
+}
