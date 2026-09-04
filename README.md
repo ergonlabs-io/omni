@@ -29,8 +29,8 @@ omni --dry-run claude   # show what would happen; launch nothing
 >
 > The CLI, the configuration system, Tier 1 interception, session recording,
 > and model routing are real and in daily use. The capability adapter and
-> full-traffic MITM are designed but **not wired in**. See
-> [What works today](#what-works-today) for the line-by-line status.
+> full-traffic MITM are designed but **not wired in**. See the
+> [Roadmap](#roadmap) for where each phase stands.
 
 ---
 
@@ -82,25 +82,6 @@ network path is structured, and is the only place omni does anything at all.
 - **🚦 Model routing, on the wire.** Rewrite `claude-opus-5` to
   `claude-sonnet-5` for an agent that will not let you — or send everything
   matching a glob to a different provider, leaving the rest on Anthropic.
-
-## What works today
-
-This project documents what it does, not what it intends to do.
-
-| | Capability | Status |
-|---|---|---|
-| ✅ | Session recording to `~/.omni/sessions` | Works, opt-in (`--record`) |
-| ✅ | Tier 1 interception (base-URL redirect to loopback) | Works |
-| ✅ | Header redaction | Works, on by default |
-| ✅ | Layered config, 7 precedence layers with provenance | Works |
-| ✅ | PTY, raw mode, `SIGWINCH`, signal forwarding, exit codes | Works |
-| ✅ | `omni init`, `config show`, `config check`, `config path` | Works |
-| ✅ | `--dry-run`, `--version`, `--mode`, `--record`, `--verbose`, `--model-map` | Works |
-| ✅ | `[[route]]` rules and `[backends.*]` | Works |
-| ✅ | `[backends.*]` routing to another provider | Works |
-| 🚧 | Capability adapter | Designed |
-| 🚧 | `--all-traffic` (Tier 2 full MITM) | Validated per agent; no CA is generated yet |
-| 🚧 | `omni sessions`, `omni ca`, `omni completions` | Reserved; exit with *not yet implemented* |
 
 ## Install
 
@@ -323,6 +304,9 @@ it is simply what omni does.
 | 3 | Middleware chain as an extension point | Partly — routing uses the seam; not yet a public one |
 | 4 | Tier 2 full MITM, opt-in | Designed |
 | 5 | Second provider | Later |
+
+`omni sessions`, `omni ca` and `omni completions` are reserved names: they
+parse, and exit with *not yet implemented* rather than pretending to work.
 
 Recording comes first because every later phase is written against the corpus
 it produces. Cross-provider translation — making Codex talk to Anthropic — is
