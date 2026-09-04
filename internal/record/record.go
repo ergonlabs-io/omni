@@ -187,6 +187,18 @@ func makeSessionDir(baseDir, name string) (string, error) {
 // Dir returns the session's recording directory.
 func (r *Recorder) Dir() string { return r.dir }
 
+// Exchanges reports how many requests this session captured.
+//
+// It exists so a caller can tell the difference between a session that
+// recorded a conversation and one that recorded nothing, which look
+// identical from the outside: both leave a directory, a meta.json, and a
+// zero exit status. Zero means no traffic ever reached omni.
+func (r *Recorder) Exchanges() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seq
+}
+
 // SetAgentVersion records the agent's version string, once known, for the
 // final meta.json written by Close. Safe to call at any point before Close.
 func (r *Recorder) SetAgentVersion(v string) {

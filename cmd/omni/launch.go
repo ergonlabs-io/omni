@@ -62,6 +62,19 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 			if cerr := rec.Close(); cerr != nil {
 				errorf("warning: closing session record: %v", cerr)
 			}
+			// A session that captured nothing is indistinguishable from a
+			// good one from the outside: a directory, a meta.json, and a
+			// zero exit status. Saying so is the difference between finding
+			// out now and finding out when you go looking for the recording
+			// you thought you had.
+			if rec.Exchanges() == 0 {
+				errorf("warning: recorded 0 exchanges — no traffic reached omni, so %s is empty", rec.Dir())
+				if p.BaseURLEnv != "" {
+					errorf("  %s is launched with %s pointed at omni; an agent that ignores it,"+
+						" or that authenticates a way that uses a different endpoint, talks to its"+
+						" provider directly and omni never sees it", p.Name, p.BaseURLEnv)
+				}
+			}
 		}()
 	}
 
