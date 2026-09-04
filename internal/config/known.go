@@ -30,6 +30,7 @@ var knownAgentPaths = map[string]bool{
 	"record.enabled": true,
 	"binary":         true,
 	"upstream":       true,
+	"listen_port":    true,
 }
 
 // knownAgentWildcards are the agent-shaped keys whose leaves are not

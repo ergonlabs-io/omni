@@ -60,12 +60,25 @@ func TestCodexTier2Unsupported(t *testing.T) {
 	}
 }
 
-func TestOnlyAnthropicIsRewritable(t *testing.T) {
+// TestModeledStylesAreRewritable pins which wire formats omni will decode.
+//
+// Anthropic and OpenAI both carry the model as a top-level "model" string,
+// which is the only field routing touches, so both are rewritable. This
+// does NOT open cross-provider translation: a rule may only target a
+// backend of the agent's own style, which Effective.Resolve enforces
+// separately and TestAPIStyleMismatchRejected pins.
+//
+// Passthrough stays false by definition — an unmodeled body is the one omni
+// promised never to decode.
+func TestModeledStylesAreRewritable(t *testing.T) {
 	if !StyleAnthropic.CanRewrite() {
 		t.Error("anthropic style must be rewritable")
 	}
-	if StyleOpenAI.CanRewrite() || StylePassthrough.CanRewrite() {
-		t.Error("v1 rewrites Anthropic only; see docs/04 'Scope for v1'")
+	if !StyleOpenAI.CanRewrite() {
+		t.Error("openai style must be rewritable: Codex posts a top-level model field")
+	}
+	if StylePassthrough.CanRewrite() {
+		t.Error("passthrough must never be decoded")
 	}
 }
 

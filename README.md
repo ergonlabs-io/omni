@@ -294,6 +294,21 @@ to the same host the agent would have reached anyway, so a backend called
 `anthropic` that points somewhere else cannot talk omni into leaking a token
 there.
 
+Codex routes too, within the OpenAI wire format — but omni cannot steer it by
+environment the way it steers Claude Code, because Codex does not follow
+`OPENAI_BASE_URL` for its model calls. Pin omni's port with `listen_port`, then
+point Codex at it once in `~/.codex/config.toml`:
+
+```toml
+[model_providers.omni]
+base_url = "http://127.0.0.1:8787"   # matches listen_port
+env_key  = "OPENAI_API_KEY"
+wire_api = "responses"
+```
+
+That is API-key auth. A Codex signed in through ChatGPT sends its model traffic
+somewhere omni cannot reach, and no configuration changes that.
+
 Two things a project-local `./.omni.conf` deliberately cannot do: declare a
 backend, or write a rule naming one. Renaming a model is a local preference;
 choosing who receives your prompts and bills you for them is not a decision a

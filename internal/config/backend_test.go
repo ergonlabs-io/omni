@@ -612,3 +612,47 @@ api_key_env = "OPENROUTER_API_KEY"
 		})
 	}
 }
+
+// TestListenPortPinned covers the key that makes a hand-written agent config
+// possible. Codex names omni's URL in its own config file, so the port
+// cannot be the ephemeral one omni would otherwise pick per launch.
+func TestListenPortPinned(t *testing.T) {
+	e := loadWithGlobal(t, `
+[agents.claude]
+listen_port = 8787
+`)
+	assertNoErrors(t, e)
+	if e.ListenPort.V != 8787 {
+		t.Errorf("ListenPort = %d, want 8787", e.ListenPort.V)
+	}
+	if !strings.Contains(e.Show(), "listen_port") {
+		t.Error("listen_port missing from config show")
+	}
+}
+
+// TestListenPortDefaultsToEphemeral pins the default. Zero means "let the
+// kernel choose", which is what every env-steered agent wants: omni tells
+// the child where it landed, so nothing has to agree on a number.
+func TestListenPortDefaultsToEphemeral(t *testing.T) {
+	e := loadWithGlobal(t, "")
+	if e.ListenPort.V != 0 {
+		t.Errorf("ListenPort = %d, want 0 (ephemeral)", e.ListenPort.V)
+	}
+	if strings.Contains(e.Show(), "listen_port") {
+		t.Error("an unset listen_port should not appear in config show")
+	}
+}
+
+// TestListenPortRangeRejected keeps a bad port a config error rather than a
+// bind failure at launch, which surfaces much further from the cause.
+func TestListenPortRangeRejected(t *testing.T) {
+	for _, port := range []string{"80", "0", "70000", "-1"} {
+		t.Run(port, func(t *testing.T) {
+			e := loadWithGlobal(t, "[agents.claude]\nlisten_port = "+port+"\n")
+			is := issueFor(e, "listen_port")
+			if is == nil || is.Level != LevelError {
+				t.Errorf("port %s should be a LevelError, got %+v", port, e.Check())
+			}
+		})
+	}
+}

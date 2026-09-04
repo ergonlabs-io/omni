@@ -129,6 +129,12 @@ type Effective struct {
 	// Upstream overrides the agent's profile.Upstream when V is non-empty.
 	Upstream Value[string]
 
+	// ListenPort pins the proxy's loopback port. Zero means an ephemeral
+	// port, which is the default and what every env-steered agent wants:
+	// omni tells the child where it landed. It is pinned only for an agent
+	// configured by hand against a URL the user wrote down.
+	ListenPort Value[int]
+
 	// Routes is the ordered routing rule list, first match wins. Per-agent.
 	// See Resolve to pair it with Backends.
 	Routes Value[[]Rule]

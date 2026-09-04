@@ -32,6 +32,9 @@ func (e *Effective) Rows() []Row {
 	if e.Upstream.V != "" {
 		add("upstream", fmt.Sprintf("%q", e.Upstream.V), e.Upstream.Source)
 	}
+	if e.ListenPort.V != 0 {
+		add("listen_port", fmt.Sprintf("%d", e.ListenPort.V), e.ListenPort.Source)
+	}
 	for _, name := range sortedBackendNames(e.Backends.V) {
 		b := e.Backends.V[name]
 		add("backends."+name, fmt.Sprintf("%s (%s, $%s)", b.BaseURL, b.APIStyle, b.APIKeyEnv), b.Source)

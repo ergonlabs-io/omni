@@ -145,6 +145,12 @@ func setRawAgentField(a *rawAgent, path, v string) (known bool, err error) {
 		a.Binary = &v
 	case "upstream":
 		a.Upstream = &v
+	case "listen_port":
+		n, e := strconv.Atoi(v)
+		if e != nil {
+			return true, e
+		}
+		a.ListenPort = &n
 	default:
 		return false, nil
 	}

@@ -31,6 +31,7 @@ var probes = map[string]string{
 	"record.enabled": "true",
 	"binary":         "/probe/binary",
 	"upstream":       "https://probe.example",
+	"listen_port":    "8787",
 }
 
 // tomlLeafPaths walks a raw config struct the way BurntSushi/toml decodes

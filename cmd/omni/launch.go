@@ -109,10 +109,19 @@ func launch(inv *Invocation, p *profile.Profile, eff *config.Effective, binPath 
 
 	// ListenAddr is left unset: proxy.New binds 127.0.0.1 on an ephemeral
 	// port, which was the only address config was ever allowed to name.
+	// A pinned port exists for an agent steered by a config file the user
+	// wrote by hand: that file names a URL, so the port cannot be the
+	// ephemeral one omni would otherwise pick per launch. Host is never
+	// configurable — see applyListenPort.
+	listenAddr := ""
+	if eff.ListenPort.V != 0 {
+		listenAddr = fmt.Sprintf("127.0.0.1:%d", eff.ListenPort.V)
+	}
 	srv, err := proxy.New(proxy.Config{
 		Upstream:        up,
 		Recorder:        rec,
 		ExtraMiddleware: extra,
+		ListenAddr:      listenAddr,
 	})
 	if err != nil {
 		errorf("cannot create proxy: %v", err)
